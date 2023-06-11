@@ -1,0 +1,5 @@
+prune tests
+prune coverage
+global-exclude *.pyc __pycache__
+global-exclude .gitignore
+exclude *.sh

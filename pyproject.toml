@@ -1,0 +1,32 @@
+[project]
+name = "queuelink"
+version = "1.0.0"
+dynamic = ["dependencies"]
+description = "Connect and link one or more Queues together or to files"
+readme = "README.rst"
+authors = [{ name = "Andy Robb", email = "andy@andyrobb.com" }]
+license = { file = "LICENSE.txt" }
+keywords = ["utility"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Topic :: Utilities",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+[project.urls]
+homepage = "https://github.com/arobb/python-queuelink"
+repository = "https://github.com/arobb/python-queuelink"
+
+[build-system]
+requires = [
+    "setuptools == 44 ; python_version < '3'",
+    "setuptools >= 45 ; python_version >= '3'",
+    "setuptools_scm[toml] >= 5 ; python_version < '3'",
+    "setuptools_scm[toml] >= 6.2 ; python_version >= '3'",
+    "wheel >= 0.29.0",
+]
+build-backend = 'setuptools.build_meta'
+
+[tool.setuptools_scm]
+

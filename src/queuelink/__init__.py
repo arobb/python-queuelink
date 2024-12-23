@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-from queuelink.queuelink import QueueLink
-
+"""QueueLink allows you to easily connect queues together"""
 # Define version variable
 from importlib_metadata import version, packages_distributions, PackageNotFoundError
+
+from queuelink.queuelink import QueueLink
 
 try:
     packages = packages_distributions()

@@ -2,6 +2,14 @@ Publishing QueueLink
 ====================
 Information on contributing may get added later.
 
+Upcoming Changes
+----------------
+#. Add better test coverage
+#. Move features from future to queuelink folders
+#. Update documentation for the additional features
+#. Add examples
+#. Add proper documentation for readthedocs
+
 Testing
 -------
 Some test commands

@@ -175,6 +175,11 @@ class QueueLink(ClassTemplate):
             except EOFError:
                 log.debug("Source in pair %s no longer available", source_id)
 
+            except BrokenPipeError:
+                log.debug("One pipe in pair %s is no longer available",
+                          pipe_name if pipe_name else source_id)
+                return
+
     def get_queue(self, queue_id):
         """Retrieve a client's Queue proxy object
 

@@ -4,6 +4,7 @@
 from importlib_metadata import version, packages_distributions, PackageNotFoundError
 
 from queuelink.queuelink import QueueLink
+from queuelink.timer import Timer
 
 try:
     packages = packages_distributions()

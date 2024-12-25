@@ -4,26 +4,53 @@ from __future__ import unicode_literals
 
 import functools
 import logging
+import multiprocessing
 import random
 import sys
 from builtins import dict
 from builtins import str as text
 from multiprocessing import Event
 from multiprocessing import Lock
+from multiprocessing import queues as mp_queue_classes
+from threading import Thread  # For non-multi-processing queues
 
 if sys.version_info[0] == 2:  # Python 2.7
+    import Queue as queue_module
+
     from Queue import Empty  # This will fail in Python 3
     from funcsigs import signature
     from multiprocessing import Process
 
 else:  # Python 3.x
+    import queue as queue_module
+
     from queue import Empty
     from inspect import signature
-    import multiprocessing
     Process = multiprocessing.get_context("fork").Process
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
+from .timer import Timer
+
+
+# List of queue types that are threaded (vs multiprocessing)
+THREADED_QUEUES = [
+    queue_module.Queue,
+    queue_module.LifoQueue,
+    queue_module.PriorityQueue,
+    queue_module.SimpleQueue
+]
+
+# List of PriorityQueue types
+PRIORITY_QUEUES = [
+    queue_module.PriorityQueue
+]
+
+# List of SimpleQueue types
+SIMPLE_QUEUES = [
+    queue_module.SimpleQueue,
+    mp_queue_classes.SimpleQueue
+]
 
 
 def validate_direction(func):
@@ -127,6 +154,38 @@ class QueueLink(ClassTemplate):
         self.stop_publishers()
 
     @staticmethod
+    def _queue_get_with_timeout(queue_proxy, timeout=0):
+        """Queue get implementation that implements partial timeout for all Queue types including
+        SimpleQueues.
+
+        :raises queue.Empty
+        """
+        timer = Timer(interval=timeout)
+
+        try:
+            return queue_proxy.get(timeout=timeout)
+
+        except TypeError:
+            while True:
+                # Alternate timer
+                if timer.interval():
+                    raise Empty
+
+                if hasattr(queue_proxy, "get_nowait"):
+                    try:
+                        return queue_proxy.get_nowait()
+                    except Empty:
+                        continue
+
+                # SimpleQueues don't have a get_nowait method/mechanism
+                else:
+                    # Try not to get stuck, but can't guarantee that another thread hasn't grabbed one
+                    if queue_proxy.empty():
+                        continue
+                    else:
+                        return queue_proxy.get()
+
+    @staticmethod
     def publisher(stop_event,
                   source_id,
                   source_queue,
@@ -143,12 +202,13 @@ class QueueLink(ClassTemplate):
 
         log = logging.getLogger(logger_name)
         log.addHandler(logging.NullHandler())
+        timeout = 0.05
 
         while True:
             try:
                 log.debug("Trying to get line from source in pair %s",
                           source_id)
-                line = source_queue.get(timeout=0.05)
+                line = QueueLink._queue_get_with_timeout(source_queue, timeout=timeout)
 
                 # Distribute the line to all downstream queues
                 for dest_id, dest_queue in dest_queues_dict.items():
@@ -157,7 +217,8 @@ class QueueLink(ClassTemplate):
                     dest_queue.put(line)
 
                 # Mark that we've finished processing the item from the queue
-                source_queue.task_done()
+                if hasattr(source_queue, 'task_done'):
+                    source_queue.task_done()
 
                 # Check for stop here
                 # Ensures we check even if the queue is really active
@@ -220,6 +281,18 @@ class QueueLink(ClassTemplate):
         # Lowercase
         direction = direction.lower()
         op_direction = "destination" if direction == "source" else "source"
+
+        # Warnings
+        # Priority Queues
+        if isinstance(queue_proxy, tuple(PRIORITY_QUEUES)):
+            self._log.warning('Entries in a PriorityQueue must have the correct format (tuple or '
+                           'simple class with a priority value) or the queue will block.')
+
+        # SimpleQueues
+        if isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
+            self._log.warning('Using multiple readers on a SimpleQueue that is a source for a '
+                           'QueueLink instance (including other QueueLink instances) can cause a '
+                           'deadlock.')
 
         with self.queues_lock:
             # Get the queue list and opposite queue list
@@ -317,7 +390,11 @@ class QueueLink(ClassTemplate):
         else:
             process_name = "ClientPublisher-{}".format(source_id)
 
-        proc = Process(target=self.publisher,
+        # Determine whether to use a thread or process based publisher
+        threaded = isinstance(source_queue, tuple(THREADED_QUEUES))
+        Parallel = Thread if threaded else Process
+
+        proc = Parallel(target=self.publisher,
                        name=process_name,
                        kwargs={"pipe_name": self.name,
                                "stop_event": stop_event,
@@ -495,6 +572,18 @@ class QueueLink(ClassTemplate):
         """
         direction = direction.lower()
 
+        def get_nowait(queue_proxy):
+            """Not all queues have a get_nowait method"""
+            try:
+                return queue_proxy.get_nowait()
+
+            except AttributeError:
+                # Try not to get stuck, but can't guarantee that another thread hasn't grabbed one
+                if queue_proxy.empty():
+                    raise Empty
+                else:
+                    return queue_proxy.get()
+
         with self.queues_lock:
             queue_list = getattr(self,
                                  "client_queues_{}".format(direction))
@@ -503,6 +592,6 @@ class QueueLink(ClassTemplate):
                 try:
                     target_queue = self.get_queue(q_id)
                     self._log.info("queue_id %s: %s",
-                                   text(q_id), target_queue.get_nowait())
+                                   text(q_id), get_nowait(target_queue))
                 except Empty:
                     self._log.info("queue_id %s is empty", text(q_id))

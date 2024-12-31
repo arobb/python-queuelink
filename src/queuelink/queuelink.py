@@ -1,32 +1,30 @@
 # -*- coding: utf-8 -*-
 """Manages the pull/push with queues"""
 from __future__ import unicode_literals
+from __future__ import annotations
+
+from typing import List, Tuple, Union
 
 import functools
 import logging
 import multiprocessing
+import queue
 import random
 import sys
+
+import queue as queue_module
+import time
+
 from builtins import dict
 from builtins import str as text
+from inspect import signature
 from multiprocessing import Event
 from multiprocessing import Lock
+from multiprocessing import Process
 from multiprocessing import queues as mp_queue_classes
+from multiprocessing.managers import BaseProxy
+from queue import Empty
 from threading import Thread  # For non-multi-processing queues
-
-if sys.version_info[0] == 2:  # Python 2.7
-    import Queue as queue_module
-
-    from Queue import Empty  # This will fail in Python 3
-    from funcsigs import signature
-    from multiprocessing import Process
-
-else:  # Python 3.x
-    import queue as queue_module
-
-    from queue import Empty
-    from inspect import signature
-    Process = multiprocessing.get_context("fork").Process
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
@@ -51,6 +49,32 @@ SIMPLE_QUEUES = [
     queue_module.SimpleQueue,
     mp_queue_classes.SimpleQueue
 ]
+
+# Union type for typing support
+UNION_SUPPORTED_QUEUES = Union[queue.Queue,
+                               queue.LifoQueue,
+                               queue.PriorityQueue,
+                               queue.SimpleQueue,
+                               multiprocessing.queues.Queue,
+                               multiprocessing.queues.JoinableQueue,
+                               multiprocessing.queues.SimpleQueue,
+                               BaseProxy]
+
+
+def is_threaded(queue_list: List):
+    """Check whether one or more queues are threaded
+
+    :param queue: Any queue or list of queues (any type)
+    :return bool
+    """
+    if not isinstance(queue_list, list):
+        queue_list = [queue_list]
+
+    for q in queue_list:
+        if isinstance(q, tuple(THREADED_QUEUES)):
+            return True
+
+    return False
 
 
 def validate_direction(func):
@@ -89,12 +113,24 @@ def validate_direction(func):
 class QueueLink(ClassTemplate):
     """Manages publishing from source and client queues"""
 
-    def __init__(self, name=None, log_name=None):
+    def __init__(self,
+                 source: UNION_SUPPORTED_QUEUES=None,
+                 destination: Union[UNION_SUPPORTED_QUEUES, List[UNION_SUPPORTED_QUEUES]]=None,
+                 name: str=None,
+                 log_name: str=None,
+                 start_method: str=None,
+                 thread_only: bool=False,
+                 link_timeout: float=0.1) -> Union[None, Tuple[str, Union[None, str, List[str]]]]:
         """Manages the pull/push with queues
 
+        :param UNION_SUPPORTED_QUEUES source: Queue to act as the source
+        :param UNION_SUPPORTED_QUEUES destination: Queue or list of queues to act as a destination
         :param str name: Appended to class name in log records (``cl.name``)
         :param str log_name: Appended to class name.name (``cl.name.log_name``)
             or just class name if ``name`` is not provided
+        :param str start_method: For multi-process use: fork, spawn or forkserver
+        :param bool thread_only: Only use threads, not separate processes, for links
+        :param float link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.1 sec
         """
         # Unique ID
         # Not used for cryptographic purposes, so excluding from Bandit
@@ -106,6 +142,9 @@ class QueueLink(ClassTemplate):
         self.log_name = log_name
 
         self._initialize_logging_with_log_name(__name__)
+
+        # Timeout for publisher queue.get calls
+        self.link_timeout = link_timeout
 
         # Indicate whether we have ever been started
         self.started = Event()
@@ -122,6 +161,24 @@ class QueueLink(ClassTemplate):
         self.client_pair_publishers = dict()
         self.publisher_stops = dict()
 
+        # Start method for process-based use
+        self.start_method = start_method
+
+        # Thread only usage (no multiprocessing)
+        self.thread_only = thread_only
+
+        # Short-circut usage
+        if source:
+            self.register_queue(queue_proxy=source, direction='source')
+
+        if destination:
+            if not isinstance(destination, list):
+                destination = [destination]
+
+            for d in destination:
+                self.register_queue(queue_proxy=d, direction='destination')
+
+
     # Class contains Locks and Queues which cannot be pickled
     def __getstate__(self):
         """Prevent _QueuePipeAdapterBase from being pickled across Processes
@@ -131,7 +188,7 @@ class QueueLink(ClassTemplate):
         """
         raise Exception("Don't pickle me!")
 
-    def _initialize_logging_with_log_name(self, class_name):
+    def _initialize_logging_with_log_name(self, class_name: str):
         """Need to reverse the print order of log_name and name"""
         if hasattr(self, '_log'):
             if self._log is not None:
@@ -151,26 +208,33 @@ class QueueLink(ClassTemplate):
 
     def stop(self):
         """Use to stop somewhat gracefully"""
-        self.stop_publishers()
+        self._stop_publishers()
 
     @staticmethod
-    def _queue_get_with_timeout(queue_proxy, timeout=0):
+    def _queue_get_with_timeout(queue_proxy, timeout: float=0, stop_event: Event=None):
         """Queue get implementation that implements partial timeout for all Queue types including
         SimpleQueues.
 
         :raises queue.Empty
         """
         timer = Timer(interval=timeout)
+        cycle_time = 0.005  # 5ms helps quickly iterate over SimpleQueues
 
         try:
             return queue_proxy.get(timeout=timeout)
 
         except TypeError:
             while True:
+                # Asked to stop, so just stop
+                if stop_event and stop_event.is_set():
+                    return
+
                 # Alternate timer
                 if timer.interval():
                     raise Empty
 
+                # Check if the queue has a get_nowait method, equivalent to get(timeout=0)
+                # This probably won't be available if get(timeout=) failed, but checking anyway
                 if hasattr(queue_proxy, "get_nowait"):
                     try:
                         return queue_proxy.get_nowait()
@@ -179,19 +243,25 @@ class QueueLink(ClassTemplate):
 
                 # SimpleQueues don't have a get_nowait method/mechanism
                 else:
-                    # Try not to get stuck, but can't guarantee that another thread hasn't grabbed one
+                    # Try not to get stuck, but can't guarantee that another thread hasn't
+                    # grabbed one
                     if queue_proxy.empty():
+                        time.sleep(cycle_time)
                         continue
                     else:
                         return queue_proxy.get()
 
     @staticmethod
-    def publisher(stop_event,
-                  source_id,
-                  source_queue,
-                  dest_queues_dict,
-                  pipe_name=None):
-        """Move messages from the source queue to the destination queue"""
+    def _publisher(stop_event,
+                   source_id,
+                   source_queue,
+                   dest_queues_dict,
+                   timeout,
+                   pipe_name=None):
+        """Move messages from the source queue to the destination queue
+
+        :param timeout=0.1; 100ms responsive-ish to shutdown and minimizes thrashing
+        """
         # Make a helpful logger name
         if pipe_name is None:
             logger_name = "{}.publisher.{}".format(__name__, source_id)
@@ -202,13 +272,19 @@ class QueueLink(ClassTemplate):
 
         log = logging.getLogger(logger_name)
         log.addHandler(logging.NullHandler())
-        timeout = 0.05
 
         while True:
+            # Check for stop
+            if stop_event.is_set():
+                log.info("Stopping due to stop event")
+                return
+
             try:
                 log.debug("Trying to get line from source in pair %s",
                           source_id)
-                line = QueueLink._queue_get_with_timeout(source_queue, timeout=timeout)
+                line = QueueLink._queue_get_with_timeout(source_queue,
+                                                         timeout=timeout,
+                                                         stop_event=stop_event)
 
                 # Distribute the line to all downstream queues
                 for dest_id, dest_queue in dest_queues_dict.items():
@@ -219,12 +295,6 @@ class QueueLink(ClassTemplate):
                 # Mark that we've finished processing the item from the queue
                 if hasattr(source_queue, 'task_done'):
                     source_queue.task_done()
-
-                # Check for stop here
-                # Ensures we check even if the queue is really active
-                if stop_event.is_set():
-                    log.info("Stopping due to stop event")
-                    return
 
             except Empty:
                 log.debug("No lines to get from source in pair %s", source_id)
@@ -241,7 +311,7 @@ class QueueLink(ClassTemplate):
                           pipe_name if pipe_name else source_id)
                 return
 
-    def get_queue(self, queue_id):
+    def get_queue(self, queue_id: Union[str, int]):
         """Retrieve a client's Queue proxy object
 
         Args:
@@ -258,7 +328,7 @@ class QueueLink(ClassTemplate):
         return queue_list[text(queue_id)]
 
     @validate_direction
-    def register_queue(self, queue_proxy, direction):
+    def register_queue(self, queue_proxy, direction: str, start_method: str=None) -> str:
         """Register a multiprocessing.JoinableQueue to this link
 
         For a new "source" queue, a publishing process will be created to send
@@ -273,6 +343,7 @@ class QueueLink(ClassTemplate):
         Args:
             queue_proxy (QueueProxy): Proxy object to a JoinableQueue
             direction (string): source or destination
+            start_method (string): How to start a process-based publisher (fork, forkserver, spawn)
 
         Returns:
             string. The client's ID for access to this queue
@@ -333,7 +404,7 @@ class QueueLink(ClassTemplate):
                 # Start the publisher
                 # This doesn't do anything unless there are some available
                 # destinations
-                self.start_publisher(source_id)
+                self._start_publisher(source_id)
 
             # New destination:
             #   Stop all existing publishing processes and restart with updated
@@ -342,16 +413,16 @@ class QueueLink(ClassTemplate):
                 self._log.debug("Registering destination client")
 
                 # Stop current processes
-                self.stop_publishers()
+                self._stop_publishers()
 
                 # Restart publishers with the updated destinations
                 for source_id in self.client_queues_source:
                     self._log.debug("Starting publisher %s", source_id)
-                    self.start_publisher(source_id)
+                    self._start_publisher(source_id, start_method)
 
         return text(queue_id)
 
-    def start_publisher(self, source_id):
+    def _start_publisher(self, source_id: str, start_method: str=None):
         """Eliminate duplicated Process() call in register_queue
 
         Start a publisher process to move items from the source queue to
@@ -391,22 +462,33 @@ class QueueLink(ClassTemplate):
             process_name = "ClientPublisher-{}".format(source_id)
 
         # Determine whether to use a thread or process based publisher
-        threaded = isinstance(source_queue, tuple(THREADED_QUEUES))
-        Parallel = Thread if threaded else Process
+        threaded = is_threaded([source_queue, *dest_queues_dict.values()])
 
-        proc = Parallel(target=self.publisher,
-                       name=process_name,
-                       kwargs={"pipe_name": self.name,
+        # Get the start context for a process-based startup, if not set use the system default
+        if start_method or self.start_method:
+            method = start_method if start_method else self.start_method
+            Process_class = multiprocessing.get_context(method).Process
+        else:
+            Process_class = Process
+
+        # Decide whether to use a local thread or process-based publisher
+        Parallel = Thread if threaded or self.thread_only else Process_class
+
+        # Start the publisher
+        proc = Parallel(target=self._publisher,
+                        name=process_name,
+                        kwargs={"pipe_name": self.name,
                                "stop_event": stop_event,
                                "source_id": source_id,
                                "source_queue": source_queue,
-                               "dest_queues_dict": dest_queues_dict})
+                               "dest_queues_dict": dest_queues_dict,
+                               "timeout": self.link_timeout})
         proc.daemon = True
         proc.start()
         self.started.set()
         self.client_pair_publishers[text(source_id)] = proc
 
-    def stop_publisher(self, source_id):
+    def _stop_publisher(self, source_id: str):
         """Stop a current publisher process"""
         self._log.debug("Stopping publisher %s", source_id)
         stop_event = self.publisher_stops[text(source_id)]
@@ -417,8 +499,9 @@ class QueueLink(ClassTemplate):
             proc_old = self.client_pair_publishers[text(source_id)]
 
             while True:
-                proc_old.join(timeout=5)
-                if proc_old.exitcode is None:
+                proc_old.join(timeout=1)
+
+                if proc_old.is_alive():
                     self._log.info("Waiting for client %s to stop", source_id)
                 else:
                     break
@@ -430,14 +513,14 @@ class QueueLink(ClassTemplate):
         # Flip the "stop" event back to normal
         stop_event.clear()
 
-    def stop_publishers(self):
+    def _stop_publishers(self):
         """Stop current publisher processes"""
         self._log.debug("Stopping any current publishers")
         for source_id in self.client_queues_source:
-            self.stop_publisher(source_id)
+            self._stop_publisher(source_id)
 
     @validate_direction
-    def unregister_queue(self, queue_id, direction):
+    def unregister_queue(self, queue_id: Union[str, int], direction: str, start_method: str=None):
         """Detach a Queue proxy from this _QueuePipeAdapterBase
 
         Returns the clientId that was removed
@@ -445,6 +528,7 @@ class QueueLink(ClassTemplate):
         Args:
             queue_id (string): ID of the client
             direction (string): source or destination
+            start_method (string): How to start a process-based publisher (fork, forkserver, spawn)
 
         Returns:
             string. ID of the client queue
@@ -464,22 +548,22 @@ class QueueLink(ClassTemplate):
 
                 # Stop the source publisher
                 # Wait for the process to stop
-                self.stop_publisher(source_id)
+                self._stop_publisher(source_id)
 
                 # Remove the stop
                 self.publisher_stops.pop(queue_id)
 
             else:
                 # Stop current processes
-                self.stop_publishers()
+                self._stop_publishers()
 
                 # Restart publishers with the updated destinations
                 for source_id in self.client_queues_source:
-                    self.start_publisher(source_id)
+                    self._start_publisher(source_id, start_method)
 
         return text(queue_id)
 
-    def is_empty(self, queue_id=None):
+    def is_empty(self, queue_id:str =None):
         """Checks whether the primary Queue or any clients' Queues are empty
 
         Returns True ONLY if ALL queues are empty if queue_id is None
@@ -541,7 +625,7 @@ class QueueLink(ClassTemplate):
 
         return alive
 
-    def is_drained(self, queue_id=None):
+    def is_drained(self, queue_id: str=None):
         """Check alive and empty
 
         Attempts clean semantic response to "is there, or will there be, data
@@ -562,7 +646,7 @@ class QueueLink(ClassTemplate):
         return drained
 
     @validate_direction
-    def destructive_audit(self, direction):
+    def destructive_audit(self, direction: str):
         """Print a line from each client Queue from the provided direction
 
         Args:

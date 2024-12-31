@@ -77,6 +77,45 @@ With a process manager
     text_out = dest_q.get()
     print(text_out)
 
+Methods
+=======
+
+* destructive_audit(direction: str)
+* get_queue(queue_id: [str, int])
+* is_alive
+* is_drained
+* is_empty(queue_id:str =None)
+* register_queue(queue_proxy, direction: str, start_method: str=None) -> client id: str
+* stop
+* unregister_queue(queue_id: str, direction: str, start_method: str=None)
+
+Queue Compatibility
+=============
+QueueLink is tested against multiple native Queue implementations. When a source or destination queue is thread-based, the link will be created as a Thread instance. When all involved queues are process-based, the link will also be a Process instance.
+
+Tested against the following queue implementations:
+
+* SyncManager.Queue (multiprocessing.Manager)
+* SyncManager.JoinableQueue (multiprocessing.Manager)
+* multiprocessing.Queue
+* multiprocessing.JoinableQueue
+* multiprocessing.SimpleQueue
+* queue.Queue
+* queue.LifoQueue
+* queue.PriorityQueue
+* queue.SimpleQueue
+
 Implementation
 ==============
 QueueLink creates a new process for each pair of queues, for a total of ``n = source count x destination count`` processes.
+
+Multiprocessing
+---------------
+Start Method: QueueLink is tested against fork, forkserver, and spawn start methods. It defaults to the system preference, but can be overridden by passing the preferred start method name to the class "start_method" parameter.
+
+Other Notes
+===========
+
+Tuning link_timeout
+-------------------
+Under heavily loaded conditions the "publisher" process/thread can thrash when trying to retrieve records from the source queue. Tuning link_timeout higher (default 0.1 seconds) can improve responsiveness. Higher values might be less responsive to stop requests and throw warnings during shutdown.

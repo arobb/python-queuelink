@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+import multiprocessing
 import unittest
+from multiprocessing import Manager
 from tests.tests import context
 
 from queue import Queue
 from queuelink import QueueLink
+
 
 class QueueLinkExampleTestCase(unittest.TestCase):
     def test_example_1(self):
@@ -22,13 +25,63 @@ class QueueLinkExampleTestCase(unittest.TestCase):
 
         # Text to send
         text_in = "a😂" * 10
-        tuple_in = (1, text_in)
 
         # Add text to the source queue
-        source_q.put(tuple_in)
+        source_q.put(text_in)
 
         # Retrieve the text from the destination queue!
-        priority, text_out = dest_q.get(timeout=1)
+        text_out = dest_q.get(timeout=1)
+        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+
+    def test_cross_thread_multiprocess(self):
+        # Source and destination
+        source_q = Queue()  # Thread-based
+        dest_q = multiprocessing.Queue()  # Process-based
+
+        # Create the QueueLink
+        queue_link = QueueLink(name="my link")
+
+        # Connect queues to the QueueLink
+        source_id = queue_link.register_queue(queue_proxy=source_q,
+                                              direction="source")
+        dest_id = queue_link.register_queue(queue_proxy=dest_q,
+                                            direction="destination")
+
+        # Text to send
+        text_in = "a😂" * 10
+
+        # Add text to the source queue
+        source_q.put(text_in)
+
+        # Retrieve the text from the destination queue!
+        text_out = dest_q.get(timeout=1)
+        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+
+    def test_cross_thread_managed_multiprocess(self):
+        # Process manager
+        manager = Manager()
+
+        # Source and destination
+        source_q = Queue()  # Thread-based
+        dest_q = manager.Queue()  # Process-based
+
+        # Create the QueueLink
+        queue_link = QueueLink(name="my link")
+
+        # Connect queues to the QueueLink
+        source_id = queue_link.register_queue(queue_proxy=source_q,
+                                              direction="source")
+        dest_id = queue_link.register_queue(queue_proxy=dest_q,
+                                            direction="destination")
+
+        # Text to send
+        text_in = "a😂" * 10
+
+        # Add text to the source queue
+        source_q.put(text_in)
+
+        # Retrieve the text from the destination queue!
+        text_out = dest_q.get(timeout=1)
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
 
 if __name__ == "__main__":

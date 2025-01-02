@@ -2,20 +2,14 @@
 from __future__ import unicode_literals
 
 import itertools
+import queue
 import sys
 import unittest
 import multiprocessing
+
 from multiprocessing import Manager
-
 from parameterized import parameterized, parameterized_class
-
-# Python 2
-if sys.version_info[0] == 2:
-    import Queue as queue
-    from Queue import Empty
-else:
-    import queue
-    from queue import Empty
+from queue import Empty
 
 from tests.tests import context
 from queuelink import Timer
@@ -64,6 +58,9 @@ class QueueLinkTestCase(unittest.TestCase):
         self.multiprocessing_ctx = multiprocessing.get_context(self.start_method)
         self.manager = self.multiprocessing_ctx.Manager()
 
+    def tearDown(self):
+        self.manager.shutdown()
+
     def queue_factory(self):
         if self.module == 'queue':
             return getattr(queue, self.class_name)()
@@ -76,9 +73,10 @@ class QueueLinkTestCase(unittest.TestCase):
 
     def test_queuelink_get_client_id(self):
         queue_proxy = self.queue_factory()
-        queue_link = QueueLink(name="test_link")
+        queue_link = QueueLink(name="test_link", start_method=self.start_method)
         client_id = queue_link.register_queue(queue_proxy=queue_proxy,
                                               direction="source")
+        queue_link.close()
 
         self.assertIsNotNone(client_id,
                              "register_queue did not return a client ID.")
@@ -121,7 +119,7 @@ class QueueLinkTestCase(unittest.TestCase):
         if is_threaded(source_q):
             self.skipTest(f'Thread-based queue type {self.module}.{self.class_name}')
 
-        queue_link = QueueLink(name="test_link")
+        queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         source_id = queue_link.register_queue(queue_proxy=source_q,
                                               direction="source")
@@ -148,7 +146,7 @@ class QueueLinkTestCase(unittest.TestCase):
         times."""
         q = self.queue_factory()
 
-        queue_link = QueueLink(name="test_link")
+        queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         # Add the queue once
         queue_link.register_queue(queue_proxy=q,
@@ -170,7 +168,7 @@ class QueueLinkTestCase(unittest.TestCase):
         """Don't allow a user to add the same proxy to a direction multiple
         times."""
         q = self.queue_factory()
-        queue_link = QueueLink(name="test_link")
+        queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         # Add the queue once
         queue_link.register_queue(queue_proxy=q,
@@ -189,7 +187,18 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
     def setUp(self):
         self.multiprocessing_ctx = multiprocessing.get_context(self.start_method)
         self.manager = self.multiprocessing_ctx.Manager()
-        self.timeout = 2  # Some spawn instances needed a little more time
+        self.timeout = 10  # Some spawn instances needed a little more time
+        self.test_text = "a😂" * 10
+
+        self.source_info = {'module': self.source[0],
+                            'class': self.source[1],
+                            'max_size': self.source[2]}
+        self.dest_info = {'module': self.dest[0],
+                          'class': self.dest[1],
+                          'max_size': self.dest[2]}
+
+        self.source_class_path = f'{self.source_info["module"]}.{self.source_info["class"]}'
+        self.dest_class_path = f'{self.dest_info["module"]}.{self.dest_info["class"]}'
 
     def queue_factory(self, module, class_name, max_size):
         if module == 'queue':
@@ -203,49 +212,66 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
 
         return queue_proxy
 
-    def test_queuelink_source_destination_movement(self):
-        source_q_module = self.source[0]
-        source_q_class = self.source[1]
-        source_class_path = f'{source_q_module}.{source_q_class}'
+    def source_destination_movement(self, rounds: int=1):
+        """Reusable source-destination method"""
+        source_q_class = self.source_info['class']
 
-        dest_q_module = self.dest[0]
-        dest_q_class = self.dest[1]
-        dest_class_path = f'{dest_q_module}.{dest_q_class}'
-
-        source_q = self.queue_factory(module=source_q_module,
-                                         class_name=source_q_class,
-                                         max_size=self.source[2])
-        dest_q = self.queue_factory(module=dest_q_module,
-                                         class_name=dest_q_class,
-                                         max_size=self.dest[2])
+        source_q = self.queue_factory(module=self.source_info['module'],
+                                      class_name=self.source_info['class'],
+                                      max_size=self.source_info['max_size'])
+        dest_q = self.queue_factory(module=self.dest_info['module'],
+                                    class_name=self.dest_info['class'],
+                                    max_size=self.dest_info['max_size'])
 
         queue_link = QueueLink(source=source_q,
                                destination=dest_q,
-                               name="movement_test_link",
+                               name="movement_timing_test_link",
                                start_method=self.start_method,
                                link_timeout=self.timeout)
 
-        text_in = "a😂" * 10
+        text_in = self.test_text
 
         # Modify text to support Priority Queues
         tuple_in = (1, text_in)
-        source_q.put(tuple_in if source_q_class == "PriorityQueue" else text_in)
+        input = tuple_in if source_q_class == "PriorityQueue" else text_in
 
-        # Pull the value
-        try:
-            object_out = QueueLink._queue_get_with_timeout(queue_proxy=dest_q, timeout=self.timeout)
-            if source_q_class == "PriorityQueue":  # Test only needs this for source Priority q's
-                text_out = object_out[1]
-            else:
-                text_out = object_out
+        timer = Timer(self.timeout)
+        for i in range(rounds):
+            source_q.put(input)
 
-        except Empty:
-            raise Empty(f'Destination queue indicating empty for source {source_class_path}, '
-            f'destination {dest_class_path}, and start method {self.start_method}')
+            # Pull the value
+            while True:
+                if timer.interval():
+                    raise TimeoutError(f'Timeout for source {self.source_class_path}, '
+                                        f'destination {self.dest_class_path}, and start '
+                                        f'method {self.start_method}.')
 
-        # Mark we pulled it for JoinableQueues
-        if hasattr(dest_q, 'task_done'):
-            dest_q.task_done()
+                try:
+                    object_out = QueueLink._queue_get_with_timeout(queue_proxy=dest_q,
+                                                                   timeout=self.timeout)
+                    text_out = object_out[1] if source_q_class == "PriorityQueue" else object_out
+
+                    # Mark we pulled it for JoinableQueues
+                    if hasattr(dest_q, 'task_done'):
+                        dest_q.task_done()
+
+                    # Move to the next item
+                    break
+
+                except Empty:
+                    link_alive = queue_link.is_alive()
+
+                    if link_alive:
+                        if timer.interval():
+                            raise Empty(f'Timeout for source {self.source_class_path}, '
+                                        f'destination {self.dest_class_path}, and start '
+                                        f'method {self.start_method}.')
+
+                    else:
+                        raise Empty('Destination queue is empty because the publisher process '
+                                    f'has died for source {self.source_class_path}, destination '
+                                    f'{self.dest_class_path}, and start '
+                                    f'method {self.start_method}.')
 
         # Shut down publisher processes
         # Resolves:
@@ -254,10 +280,30 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
         # Seemed to be with managed JoinableQueues and (threaded) queue.Queues
         queue_link.stop()
 
+        # Retrieve metrics
+        metrics = queue_link.get_metrics()
+
+        return text_out, metrics
+
+    def test_queuelink_source_destination_movement(self):
+        text_in = self.test_text
+        text_out, metrics = self.source_destination_movement(rounds=1)
+
         self.assertEqual(text_in,
                          text_out,
-                         f"Text isn't the same across the link; source is {source_class_path} "
-                         f"and dest is {dest_class_path}")
+                         f"Text isn't the same across the link; source is {self.source_class_path} "
+                         f"and dest is {self.dest_class_path}")
+
+    def test_queuelink_500_movement_timing(self):
+        rounds = 500
+        threshold = 0.03
+
+        text_out, metrics = self.source_destination_movement(rounds=rounds)
+
+        self.assertLessEqual(metrics['mean'], threshold,
+                             f'Mean latency for source {self.source_class_path} and destination '
+                             f'{self.dest_class_path} and start method {self.start_method} exeeded '
+                             f'threshold of {threshold} seconds.')
 
 
 if __name__ == "__main__":

@@ -80,18 +80,31 @@ With a process manager
 Methods
 =======
 
-* destructive_audit(direction: str)
-* get_queue(queue_id: [str, int])
-* is_alive
-* is_drained
-* is_empty(queue_id:str =None)
-* register_queue(queue_proxy, direction: str, start_method: str=None) -> client id: str
-* stop
-* unregister_queue(queue_id: str, direction: str, start_method: str=None)
+Primary methods
+---------------------
+These methods are used most common use cases.
+
+* ``register_queue(queue_proxy, direction: str, start_method: str=None) -> client id: str``
+* ``stop``
+
+Secondary methods
+-----------------
+These methods are less common.
+
+* ``destructive_audit(direction: str)``
+* ``get_queue(queue_id: [str, int])``
+* ``is_alive``
+* ``is_drained``
+* ``is_empty(queue_id:str =None)``
+* ``unregister_queue(queue_id: str, direction: str, start_method: str=None)``
 
 Queue Compatibility
 =============
 QueueLink is tested against multiple native Queue implementations. When a source or destination queue is thread-based, the link will be created as a Thread instance. When all involved queues are process-based, the link will also be a Process instance.
+
+Note that in thread-based situations throughput might be limited by the `Python GIL <https://wiki.python.org/moin/GlobalInterpreterLock>`_.
+
+Two thread-based queues in different processes cannot be bridged directly. They would require an intermediate multiprocessing queue that can be accessed across processes.
 
 Tested against the following queue implementations:
 
@@ -107,7 +120,7 @@ Tested against the following queue implementations:
 
 Implementation
 ==============
-QueueLink creates a new process for each pair of queues, for a total of ``n = source count x destination count`` processes.
+QueueLink creates a new process for each source queue, regardless of the number of downstream queues. The linking thread/process gets each element on the source queue and iterates over and puts to the set of destination queues.
 
 Multiprocessing
 ---------------

@@ -180,32 +180,41 @@ class QueueLink(ClassTemplate):
 
     # Class contains Locks and Queues which cannot be pickled
     def __getstate__(self):
-        """Prevent _QueuePipeAdapterBase from being pickled across Processes
+        """Prevent _QueueHandleAdapterBase from being pickled across Processes
 
         Raises:
             Exception
         """
         raise TypeError("Don't pickle me!")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
     def close(self):
         """Remove managed objects started within QueueLink"""
 
-        # Metrics
-        self.metrics_queue = None
+        # Make sure processes are stopped
+        if self.stop and self.started:
+            self.stop()
 
-        # Started event
-        self.started = None
+        # Unset these variables to release any objects they held
+        unset_list = ['metrics_queue',  # Metrics
+                      'started',  # Started event
+                      'queues_lock',  # Queues lock
+                      'publisher_stops',  # Publisher stop events
+                      'client_queues_source',  # Queue references
+                      'client_queues_destination',  # Queue references
+                      'client_pair_publishers']  # Queue references
 
-        # Queues lock
-        self.queues_lock = None
-
-        # Publisher stop events
-        self.publisher_stops = None
-
-        # Queue references
-        self.client_queues_source = None
-        self.client_queues_destination = None
-        self.client_pair_publishers = None
+        for var in unset_list:
+            if hasattr(self, var):
+                setattr(self, var, None)
 
     def _initialize_logging_with_log_name(self, class_name: str):
         """Need to reverse the print order of log_name and name"""
@@ -293,17 +302,17 @@ class QueueLink(ClassTemplate):
                    timeout,
                    metrics_queue: UNION_SUPPORTED_QUEUES,
                    metric_interval: int=100,
-                   pipe_name=None):
+                   name=None):
         """Move messages from the source queue to the destination queue
 
         :param timeout=0.1; 100ms responsive-ish to shutdown and minimizes thrashing
         """
         # Make a helpful logger name
-        if pipe_name is None:
+        if name is None:
             logger_name = "{}.publisher.{}".format(__name__, source_id)
         else:
             logger_name = "{}.publisher.{}.{}".format(__name__
-                                                      , pipe_name
+                                                      , name
                                                       , source_id)
 
         log = logging.getLogger(logger_name)
@@ -361,7 +370,7 @@ class QueueLink(ClassTemplate):
 
             except BrokenPipeError:
                 log.debug("One pipe in pair %s is no longer available",
-                          pipe_name if pipe_name else source_id)
+                          name if name else source_id)
                 return
 
     def get_queue(self, queue_id: Union[str, int]):
@@ -522,7 +531,7 @@ class QueueLink(ClassTemplate):
         # Start the publisher
         proc = Parallel(target=self._publisher,
                         name=process_name,
-                        kwargs={"pipe_name": self.name,
+                        kwargs={"name": self.name,
                                "stop_event": stop_event,
                                "source_id": source_id,
                                "source_queue": source_queue,
@@ -567,7 +576,7 @@ class QueueLink(ClassTemplate):
 
     @validate_direction
     def unregister_queue(self, queue_id: Union[str, int], direction: str, start_method: str=None):
-        """Detach a Queue proxy from this _QueuePipeAdapterBase
+        """Detach a Queue proxy from this _QueueHandleAdapterBase
 
         Returns the clientId that was removed
 

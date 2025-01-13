@@ -2,6 +2,8 @@
 from __future__ import unicode_literals
 
 import itertools
+import logging
+import os
 import queue
 import sys
 import unittest
@@ -15,22 +17,8 @@ from tests.tests import context
 from queuelink import Timer
 from queuelink import QueueLink
 from queuelink.queuelink import is_threaded
+from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 
-# Ways to start a process
-PROC_START_METHODS = ['fork', 'forkserver', 'spawn']
-
-# Module, Class, Max size
-QUEUE_TYPE_LIST = [
-    ('manager', 'Queue', None),
-    ('manager', 'JoinableQueue', None),
-    ('multiprocessing', 'Queue', None),
-    ('multiprocessing', 'JoinableQueue', None),
-    ('multiprocessing', 'SimpleQueue', None),
-    ('queue', 'Queue', None),
-    ('queue', 'LifoQueue', None),
-    ('queue', 'PriorityQueue', None),
-    ('queue', 'SimpleQueue', None)
-]
 
 QUEUE_TYPE_LIST_SRC_DEST = itertools.product(QUEUE_TYPE_LIST, QUEUE_TYPE_LIST)
 
@@ -51,6 +39,11 @@ class QueueLinkTestCase(unittest.TestCase):
     These tests only check a single class, so we don't need both directions
     """
     def setUp(self):
+        content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
+
+        log_config_fname = os.path.join(content_dir, 'testing_logging_config.ini')
+        logging.config.fileConfig(fname=log_config_fname, disable_existing_loggers=False)
+
         self.module = self.queue_type[0]
         self.class_name = self.queue_type[1]
         self.timeout = self.queue_type[2]
@@ -185,9 +178,14 @@ class QueueLinkTestCase(unittest.TestCase):
 class QueueLinkTestCaseCombinations(unittest.TestCase):
     """source and dest are tuples of (queue module, queue class, max timeout)"""
     def setUp(self):
+        content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
+
+        log_config_fname = os.path.join(content_dir, 'testing_logging_config.ini')
+        logging.config.fileConfig(fname=log_config_fname, disable_existing_loggers=False)
+
         self.multiprocessing_ctx = multiprocessing.get_context(self.start_method)
         self.manager = self.multiprocessing_ctx.Manager()
-        self.timeout = 10  # Some spawn instances needed a little more time
+        self.timeout = 60  # Some spawn instances needed a little more time
         self.test_text = "a😂" * 10
 
         self.source_info = {'module': self.source[0],

@@ -23,53 +23,8 @@ from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
 from .timer import Timer
 from .metrics import Metrics
-
-
-# List of queue types that are threaded (vs multiprocessing)
-THREADED_QUEUES = [
-    queue.Queue,
-    queue.LifoQueue,
-    queue.PriorityQueue,
-    queue.SimpleQueue
-]
-
-# List of PriorityQueue types
-PRIORITY_QUEUES = [
-    queue.PriorityQueue
-]
-
-# List of SimpleQueue types
-SIMPLE_QUEUES = [
-    queue.SimpleQueue,
-    mp_queue_classes.SimpleQueue
-]
-
-# Union type for typing support
-UNION_SUPPORTED_QUEUES = Union[queue.Queue,
-                               queue.LifoQueue,
-                               queue.PriorityQueue,
-                               queue.SimpleQueue,
-                               multiprocessing.queues.Queue,
-                               multiprocessing.queues.JoinableQueue,
-                               multiprocessing.queues.SimpleQueue,
-                               BaseProxy]
-
-
-def is_threaded(queue_list: List):
-    """Check whether one or more queues are threaded
-
-    :param queue: Any queue or list of queues (any type)
-    :return bool
-    """
-    if not isinstance(queue_list, list):
-        queue_list = [queue_list]
-
-    for q_inst in queue_list:
-        if isinstance(q_inst, tuple(THREADED_QUEUES)):
-            return True
-
-    return False
-
+from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
+from .common import is_threaded
 
 def validate_direction(func):
     """Decorator to check that 'direction' is an acceptable value.

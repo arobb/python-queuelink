@@ -1,31 +1,31 @@
 # -*- coding: utf-8 -*-
-"""Parent class for QueuePipeAdapterReader and QueuePipeAdapterWriter"""
+"""Parent class for QueueHandleAdapterReader and QueuePipeAdapterWriter"""
 from __future__ import unicode_literals
 
 import random
 import sys
-from multiprocessing import Event
-from multiprocessing import Lock
+
+import multiprocessing
+
+from threading import Thread  # For non-multi-processing queues
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
-# from .queuelink import QueueLink
-
-if sys.version_info[0] == 2:
-    from multiprocessing import Process
-elif sys.version_info[0] == 3:
-    import multiprocessing
-    Process = multiprocessing.get_context("fork").Process
+from .common import UNION_SUPPORTED_QUEUES
+from .common import is_threaded
 
 
-class _QueuePipeAdapterBase(ClassTemplate):
+class _QueueHandleAdapterBase(ClassTemplate):
     def __init__(self,
                  queue,
-                 subclass_name,
-                 queue_direction,
-                 name=None,
-                 pipe_handle=None,
-                 log_name=None):
+                 subclass_name: str,
+                 queue_direction: str,
+                 name:str =None,
+                 handle=None,
+                 log_name:str =None,
+                 start_method: str=None,
+                 thread_only: bool=False,
+                 trusted: bool=False):
         """QueuePipeAdapter abstract implementation
 
         Args:
@@ -33,6 +33,8 @@ class _QueuePipeAdapterBase(ClassTemplate):
                 e.g. for PrPipeReader from stdout, the flow is (PIPE => QUEUE)
                 => CLIENT QUEUES (from pipe/queue into client queues), and
                 therefore queue_direction would be "source".
+             trusted: Whether to trust Connection objects; True uses .send/.recv,
+                False send_bytes/recv_bytes
         """
 
         # Unique ID for this PrPipe
@@ -44,7 +46,7 @@ class _QueuePipeAdapterBase(ClassTemplate):
         # Name for this instance, typically stdin/stdout/stderr
         self.name = name
 
-        # Name of the subclass (QueuePipeAdapterReader, QueuePipeAdapterWriter)
+        # Name of the subclass (QueueHandleAdapterReader, QueuePipeAdapterWriter)
         self.subclass_name = subclass_name
 
         # Additional naming for differentiating multiple instances
@@ -58,49 +60,50 @@ class _QueuePipeAdapterBase(ClassTemplate):
         self.client_direction = "source" if queue_direction == "destination" \
             else "destination"
 
+        # Whether to use only threading (vs multiprocessing)
+        self.thread_only = thread_only
+
+        # Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes
+        self.trusted = trusted
+
+        # Which multiprocess context to use
+        self.multiprocessing_ctx = multiprocessing.get_context(start_method)
+
         # Whether we have ever been started
-        self.started = Event()
+        self.started = self.multiprocessing_ctx.Event()
 
         # Whether we have been asked to stop
-        self.stopped = Event()
+        self.stopped = self.multiprocessing_ctx.Event()
 
         # Whether the queue adapter process should stop
-        self.stop_event = Event()
+        self.stop_event = self.multiprocessing_ctx.Event()
 
         # The queue proxy to be used as the main input or output buffer.
         # Attaching this to the queue link is the responsibility of subclasses.
         self.queue = queue
 
-        # Mechanism to connect the baseline queue and client queues
-        # self.queue_link = QueueLink(self.name,
-        #                             log_name=self.log_name)
-
-        # Store the queue in the correct orientation in the queue link
-        # self.queue_link.register_queue(queue_proxy=self.queue,
-        #                                direction=self.queue_direction)
-
         # Lock to notify readers/writers that a read/write is in progress
-        self.queue_lock = Lock()
+        self.queue_lock = self.multiprocessing_ctx.Lock()
 
         self.process = None
-        self.pipe_handle = None
-        if pipe_handle is not None:
-            self.set_pipe_handle(pipe_handle)
+        self.handle = None
+        if handle is not None:
+            self.set_handle(handle)
 
     # Class contains Locks and Queues which cannot be pickled
     def __getstate__(self):
-        """Prevent _QueuePipeAdapterBase from being pickled across Processes
+        """Prevent _QueueHandleAdapterBase from being pickled across Processes
 
         Raises:
             Exception
         """
         raise Exception("Don't pickle me!")
 
-    def set_pipe_handle(self, pipe_handle):
+    def set_handle(self, handle):
         """Set the pipe handle to use
 
         Args:
-            pipe_handle (io.IOBase): An open pipe (subclasses of file,
+            handle (io.IOBase): An open handle (subclasses of file,
                 IO.IOBase)
 
         Raises:
@@ -110,7 +113,7 @@ class _QueuePipeAdapterBase(ClassTemplate):
             raise HandleAlreadySet
 
         # Store the pipehandle
-        self.pipe_handle = pipe_handle
+        self.handle = handle
 
         # Process name
         process_name = "{}-{}".format(self.subclass_name, self.name)
@@ -118,27 +121,36 @@ class _QueuePipeAdapterBase(ClassTemplate):
         if self.log_name is not None:
             process_name = "{}-{}".format(process_name, self.log_name)
 
+        # Select the right concurrency mechanism
+        threaded = is_threaded(self.queue)
+        Parallel = Thread if threaded or self.thread_only else self.multiprocessing_ctx.Process
+
         self._log.debug("Setting %s adapter process for %s pipe handle",
                         self.subclass_name, self.name)
-        self.process = Process(target=self.queue_pipe_adapter,
-                               name=process_name,
-                               kwargs={"pipe_name": self.name,
-                                       "pipe_handle": pipe_handle,
-                                       "queue": self.queue,
-                                       "queue_lock": self.queue_lock,
-                                       "stop_event": self.stop_event})
+        self.process = Parallel(target=self.queue_handle_adapter,
+                                name=process_name,
+                                kwargs={"name": self.name,
+                                        "handle": handle,
+                                        "queue": self.queue,
+                                        "queue_lock": self.queue_lock,
+                                        "stop_event": self.stop_event,
+                                        "trusted": self.trusted})
         self.process.daemon = True
         self.process.start()
         self.started.set()
         self._log.debug("Kicked off %s adapter process for %s pipe handle",
                         self.subclass_name, self.name)
 
+    def __del__(self):
+        self.close()
+
     @staticmethod
-    def queue_pipe_adapter(pipe_name,
-                           pipe_handle,
-                           queue,
-                           queue_lock,
-                           stop_event):
+    def queue_handle_adapter(name,
+                             handle,
+                             queue,
+                             queue_lock,
+                             stop_event,
+                             trusted):
         """Override me in a subclass to do something useful"""
 
     def get_queue(self, client_id):
@@ -152,11 +164,8 @@ class _QueuePipeAdapterBase(ClassTemplate):
         """
         return self.queue_link.get_queue(client_id)
 
-    def stop(self):
-        """Stop the adapter and queue link.
-
-        Does not force a drain of the queues.
-        """
+    def _stop(self):
+        """Internal stop method"""
         # Mark that we have been asked to stop
         self.stopped.set()
 
@@ -164,14 +173,28 @@ class _QueuePipeAdapterBase(ClassTemplate):
         self.stop_event.set()
 
         while True:
-            self.process.join(timeout=5)
-            if self.process.exitcode is None:
+            self.process.join(timeout=1)
+
+            if self.process.is_alive():
                 self._log.info("Waiting for adapter to stop")
             else:
                 break
 
-        # Stop the queue link
-        # self.queue_link.stop()
+    def close(self):
+        """Stop the adapter and queue link and clean up.
+
+        Does not force a drain of the queues.
+        """
+        if self._stop and self.started:
+            self._stop()
+
+        # Delete/unlink other resources
+        self.started = None
+        self.stopped = None
+        self.stop_event = None
+        self.queue_lock = None
+        self.queue = None
+        self.handle = None
 
     def is_empty(self, client_id=None):
         """Checks whether the primary Queue or any clients' Queues are empty
@@ -240,37 +263,3 @@ class _QueuePipeAdapterBase(ClassTemplate):
         # running self.queue_link.is_drained()
 
         return drained
-
-    # def register_queue(self, queue_proxy):
-    #     """Register an existing Queue proxy to obtain data from this pipe
-    #
-    #     Args:
-    #         queue_proxy (multiprocessing.JoinableQueue): Proxy reference to a
-    #             JoinableQueue
-    #
-    #     Returns:
-    #         string: An integer Client ID, usually string encoded.
-    #     """
-    #     return self.queue_link.register_queue(queue_proxy=queue_proxy,
-    #                                           direction=self.client_direction)
-    #
-    # def unregister_queue(self, client_id):
-    #     """Remove a registration to stop content being added to a Queue
-    #
-    #     Args:
-    #         client_id (string): Registration ID to unlink
-    #
-    #     Returns:
-    #         None
-    #     """
-    #     return self.queue_link.unregister_queue(queue_id=client_id,
-    #                                             direction=self.client_direction)
-    #
-    # def destructive_audit(self):
-    #     """Remove a line from each attached queue and print it
-    #
-    #     Returns:
-    #         None
-    #     """
-    #     return self.queue_link.destructive_audit(direction=
-    #                                             self.client_direction)

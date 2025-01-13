@@ -36,6 +36,32 @@ class ProcessNotStarted(Exception):
         return repr(self.value)
 
 
+class HandleAlreadySet(Exception):
+    """Raise if a pipe adapter has already been configured with a pipe handle"""
+    def __init__(self, value=""):
+        """Arguments must be option to prevent triggering
+        https://bugs.python.org/issue15440 when raised in _Command"""
+        self.errno = 5
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
+
+
+class HandleNotSet(Exception):
+    """Raise if a pipe adapter has not been configured with a pipe handle, but
+    a call requires one have been set
+    """
+    def __init__(self, value=""):
+        """Arguments must be option to prevent triggering
+        https://bugs.python.org/issue15440 when raised in _Command"""
+        self.errno = 6
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
+
+
 class ExceptionHandler(Exception):
     """Exception management
 

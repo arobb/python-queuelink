@@ -8,17 +8,13 @@ import sys
 import tempfile
 from codecs import getreader
 from enum import Enum
+from io import IOBase as file
 
 from kitchen.text.converters import to_bytes
 from kitchenpatch import getwriter
 
 from .classtemplate import ClassTemplate
 from .timer import Timer
-
-# Py2 uses "file" as the base class for IO
-# Used for an isinstance comparison
-if sys.version_info[0] == 3:
-    from io import IOBase as file
 
 
 class TYPES(Enum):
@@ -37,9 +33,8 @@ class ContentWrapper(ClassTemplate):
         cw.value = "Updated text data"
 
     Access data with
-        print("My data: {}".format(cw.value))
-
-    TODO: Manage value updates that cross THRESHOLD
+        print("My data: {cw.value}")
+        print("My data: {cw}")
     """
 
     # Need to figure out a way to do this automatically
@@ -62,19 +57,29 @@ class ContentWrapper(ClassTemplate):
     def __setattr__(self, attr, val):
         """When necessary, save the 'value' to a buffer file"""
         if attr == "value":
-            # Within the threshold size limit
-            if len(to_bytes(val)) < ContentWrapper.THRESHOLD:
+            # Within the threshold size limit or not forced to use a file
+            if len(to_bytes(val)) < self.THRESHOLD and not self._is_explicit_file():
                 self._log.debug("Storing value to memory")
                 object.__setattr__(self, attr, val)
+
+                # Delete temp file if we had previously used a file
+                self._delete_temp_file()
 
             # Larger than what a queue value can hold
             # due to pipe limits, store value in a temp file
             else:
+                # Clear existing in-memory value
+                if hasattr(object, 'value'):
+                    del self.value
+
+                # Set the type
+                object.__setattr__(self, "type", TYPES.FILE)
+
                 # pylint: disable=consider-using-with
                 # We explicitly do not want to close the tempfile automatically
-                object.__setattr__(self, "type", TYPES.FILE)
-                object.__setattr__(self, "location_handle",
-                                   tempfile.NamedTemporaryFile(delete=False))
+                if not self.location_handle:
+                    object.__setattr__(self, "location_handle",
+                                       tempfile.NamedTemporaryFile(delete=False))
                 handle = object.__getattribute__(self, "location_handle")
                 object.__setattr__(self, "location_name", handle.name)
                 writer = getwriter("utf-8")(handle)
@@ -129,12 +134,7 @@ class ContentWrapper(ClassTemplate):
     def __del__(self):
         """When used, close any open file handles on object destruction"""
         self._log.debug("Object being deleted")
-        if isinstance(self.location_handle, file):
-            self.location_handle.close()
-
-        # Delete any files on disk
-        if self.location_name is not None and not self.being_serialized:
-            os.remove(self.location_name)
+        self._delete_temp_file()
 
     def __len__(self):
         return len(self.value)
@@ -143,28 +143,61 @@ class ContentWrapper(ClassTemplate):
         return "{}('{}')".format(self.__class__.__name__, self.value)
 
     def __str__(self):
-        return self.value
+        if isinstance(self.value, str):
+            return self.value
+
+        elif isinstance(self.value, bytes):
+            return self.value.decode('utf8')
+
+        else:
+            return str(self.value)
+
+    def __bytes__(self):
+        if isinstance(self.value, str):
+            return self.value.encode('utf8')
+
+        elif isinstance(self.value, bytes):
+            return self.value
+
+        else:
+            bytes(self.value)
 
     def __eq__(self, other):
         return self.value == other
 
-    def __init__(self, val, threshold=None):
+    def __init__(self, val, threshold: int=None, type: TYPES=None):
         self._log = None
         self._initialize_logging(__name__)
 
         self.THRESHOLD = self.THRESHOLD if threshold is None else threshold
-        self.type = TYPES.DIRECT
+
+        # Set the type
+        if type:
+            if isinstance(type, TYPES):
+                self.type = type
+                self.type_explicit = True
+            else:
+                raise (TypeError, f'Given type "{type}" is not from TYPES')
+        else:
+            self.type = TYPES.DIRECT
+            self.type_explicit = False
 
         # Used only if this is stored in a file
-        self.location_handle = None
-        self.location_name = None
-        self.being_serialized = False
+        self.location_handle: file = None
+        self.location_name: str = None
+        self.being_serialized: bool = False
 
         # Store the initial value
         self.value = val
 
     def _create_buffer(self):
         pass
+
+    def _is_explicit_file(self):
+        if self.type_explicit and self.type == TYPES.FILE:
+            return True
+
+        return False
 
     def _get_value_from_file(self):
         handle = object.__getattribute__(self, "location_handle")
@@ -178,3 +211,16 @@ class ContentWrapper(ClassTemplate):
                        "seconds", lap)
 
         return content
+
+    def _delete_temp_file(self):
+        """Delete the temp file if set"""
+        if isinstance(self.location_handle, file):
+            self._log.debug('Closing temp file')
+            self.location_handle.close()
+
+        # Delete any files on disk
+        if self.location_name and not self.being_serialized:
+            self._log.debug('Deleting temp file')
+            os.remove(self.location_name)
+            self.location_handle = None
+            self.location_name = None

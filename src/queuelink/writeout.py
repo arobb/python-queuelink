@@ -8,13 +8,12 @@ from kitchenpatch import getwriter
 from .exceptionhandler import ExceptionHandler
 
 
-def writeOut(pipe, outputPrefix):
-    """Use with ProcessRunner.mapLines to easily write to your favorite pipe
-    or handle
+def writeout(pipe, output_prefix):
+    """Easily write to your favorite pipe or handle with current content
 
     Args:
         pipe (pipe): A system pipe/file handle to write output to
-        outputPrefix (string): A string to prepend to each line
+        output_prefix (string): A string to prepend to each line
 
     Returns:
         function
@@ -23,7 +22,7 @@ def writeOut(pipe, outputPrefix):
 
     def func(line):
         pipe_writer = getwriter("utf-8")(pipe)
-        output = "{}{}".format(outputPrefix, line)
+        output = "{}{}".format(output_prefix, line)
 
         try:
             pipe_writer.write(output)
@@ -40,7 +39,7 @@ def writeOut(pipe, outputPrefix):
 
         except ValueError as exc:
             raise ExceptionHandler(exc,
-                                   "writeOut caught odd error: {}".format(exc))
+                                   "writeout caught odd error: {}".format(exc))
 
         finally:
             pipe_writer.flush()

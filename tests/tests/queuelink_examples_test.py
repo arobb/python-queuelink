@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+import logging
 import multiprocessing
+import os
 import unittest
 from multiprocessing import Manager
 from tests.tests import context
@@ -9,6 +11,12 @@ from queuelink import QueueLink
 
 
 class QueueLinkExampleTestCase(unittest.TestCase):
+    def setUp(self):
+        content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
+
+        log_config_fname = os.path.join(content_dir, 'testing_logging_config.ini')
+        logging.config.fileConfig(fname=log_config_fname, disable_existing_loggers=False)
+
     def test_example_1(self):
         # Source and destination queues
         source_q = Queue()

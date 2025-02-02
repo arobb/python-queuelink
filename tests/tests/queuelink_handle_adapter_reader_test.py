@@ -60,23 +60,23 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         if self.queue_module == 'manager':
             return getattr(self.manager, self.queue_class)()
 
-    # def source_destination_movement_subprocess_pipe(self, rounds: int=1):
-    #     """Reusable source-destination method"""
-    #     # Text in
-    #     text_in = 'a😂' * 10
-    #
-    #     # Subprocess
-    #     proc = subprocess.Popen([self.sampleCommandPath,
-    #                              '--manual', text_in,
-    #                              '--lines', str(rounds)],
-    #                             stdout=PIPE, universal_newlines=newlines, close_fds=True)
-    #
-    #     # Destination queues
-    #     dest_q = self.queue_factory()
-    #
-    #     # Connect the reader
-    #     read_adapter = QueueHandleAdapterReader(dest_q, handle=proc.stdout,
-    #                                             start_method=self.start_method)
+    def source_destination_movement_subprocess_pipe(self, rounds: int=1):
+        """Reusable source-destination method"""
+        # Text in
+        text_in = 'a😂' * 10
+
+        # Subprocess
+        proc = subprocess.Popen([self.sampleCommandPath,
+                                 '--manual', text_in,
+                                 '--lines', str(rounds)],
+                                stdout=PIPE, universal_newlines=newlines, close_fds=True)
+
+        # Destination queues
+        dest_q = self.queue_factory()
+
+        # Connect the reader
+        read_adapter = QueueHandleAdapterReader(dest_q, handle=proc.stdout,
+                                                start_method=self.start_method)
 
 
     @parameterized.expand([

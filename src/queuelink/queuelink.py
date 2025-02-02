@@ -9,7 +9,6 @@ import functools
 import logging
 import multiprocessing
 import queue
-import random
 import time
 
 from builtins import str as text
@@ -24,7 +23,7 @@ from .exceptionhandler import ProcessNotStarted
 from .timer import Timer
 from .metrics import Metrics
 from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
-from .common import is_threaded
+from .common import new_id, is_threaded
 
 def validate_direction(func):
     """Decorator to check that 'direction' is an acceptable value.
@@ -130,9 +129,7 @@ class QueueLink(ClassTemplate):
         """
         # Unique ID
         # Not used for cryptographic purposes, so excluding from Bandit
-        self.id = \
-            ''.join([random.choice(  # nosec
-                '0123456789ABCDEF') for x in range(6)])
+        self.id = new_id()
 
         self.name = name
         self.log_name = log_name

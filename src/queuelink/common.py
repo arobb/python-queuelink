@@ -2,6 +2,7 @@
 """Shared constants and functions"""
 import queue
 import multiprocessing
+import random
 
 from multiprocessing import queues as mp_queue_classes
 from typing import List, Union
@@ -68,3 +69,7 @@ def is_threaded(queue_list: Union[List, UNION_SUPPORTED_QUEUES]):
             return True
 
     return False
+
+def new_id():
+    return ''.join([random.choice(  # nosec
+               '0123456789ABCDEF') for x in range(6)])

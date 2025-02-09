@@ -10,6 +10,8 @@ from queuelink.timer import Timer
 from queuelink.common import UNION_SUPPORTED_QUEUES
 
 # Pipe adapters
+from queuelink.contentwrapper import ContentWrapper
+from queuelink.contentwrapper import WRAP_WHEN
 from queuelink.writeout import writeout
 from queuelink.queue_handle_adapter_reader import QueueHandleAdapterReader
 

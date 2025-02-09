@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 from codecs import getreader
-from enum import Enum
+from enum import Enum, auto
 from io import IOBase as file
 
 from kitchen.text.converters import to_bytes
@@ -21,6 +21,19 @@ class TYPES(Enum):
     """Enum indicating whether a wrapped item is in memory or a file"""
     DIRECT = 0
     FILE = 1
+
+
+class WRAP_WHEN(Enum):
+    """Enum for deciding when to use ContentWrapper
+    Not used directly inside ContentWrapper
+
+    AUTO: Use a ContentWrapper only when content is over ContentWrapper.THRESHOLD (or local size)
+    ALWAYS: All content is wrapped
+    NEVER: No content is wrapped
+    """
+    AUTO = auto()
+    ALWAYS = auto()
+    NEVER = auto()
 
 
 class ContentWrapper(ClassTemplate):

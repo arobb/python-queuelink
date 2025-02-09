@@ -11,6 +11,7 @@ from threading import Thread  # For non-multi-processing queues
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
+from .contentwrapper import WRAP_WHEN
 from .common import UNION_SUPPORTED_QUEUES
 from .common import is_threaded
 
@@ -25,7 +26,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
                  log_name:str =None,
                  start_method: str=None,
                  thread_only: bool=False,
-                 trusted: bool=False):
+                 trusted: bool=False,
+                 wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER):
         """QueuePipeAdapter abstract implementation
 
         Args:
@@ -65,6 +67,9 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes
         self.trusted = trusted
+
+        # When to use a ContentWrapper
+        self.wrap_when = wrap_when
 
         # Which multiprocess context to use
         self.multiprocessing_ctx = multiprocessing.get_context(start_method)
@@ -134,7 +139,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
                                         "queue": self.queue,
                                         "queue_lock": self.queue_lock,
                                         "stop_event": self.stop_event,
-                                        "trusted": self.trusted})
+                                        "trusted": self.trusted,
+                                        "wrap_when": self.wrap_when})
         self.process.daemon = True
         self.process.start()
         self.started.set()
@@ -149,8 +155,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
                              handle,
                              queue,
                              queue_lock,
-                             stop_event,
-                             trusted):
+                             stop_event):
         """Override me in a subclass to do something useful"""
 
     def get_queue(self, client_id):

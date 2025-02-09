@@ -8,6 +8,8 @@ import os
 import subprocess
 import unittest
 
+from typing import Union
+
 from queue import Empty
 from parameterized import parameterized
 from parameterized import parameterized_class
@@ -17,6 +19,7 @@ from tests.tests import context
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 from queuelink import QueueLink
 from queuelink import QueueHandleAdapterReader
+from queuelink import ContentWrapper, WRAP_WHEN
 
 # Queue type list plus start methods
 CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
@@ -60,43 +63,37 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         if self.queue_module == 'manager':
             return getattr(self.manager, self.queue_class)()
 
-    def source_destination_movement_subprocess_pipe(self, rounds: int=1):
-        """Reusable source-destination method"""
-        # Text in
-        text_in = 'a😂' * 10
+    def subprocess_factory(self, text_in: str=None, newlines: bool=True, line_count: int=1):
+        if not text_in:
+            text_in = 'a😂' * 10
 
-        # Subprocess
         proc = subprocess.Popen([self.sampleCommandPath,
                                  '--manual', text_in,
-                                 '--lines', str(rounds)],
-                                stdout=PIPE, universal_newlines=newlines, close_fds=True)
+                                 '--lines', str(line_count)],
+                                stdout=PIPE,
+                                universal_newlines=newlines,
+                                close_fds=True)
 
-        # Destination queues
-        dest_q = self.queue_factory()
+        return proc
 
-        # Connect the reader
-        read_adapter = QueueHandleAdapterReader(dest_q, handle=proc.stdout,
-                                                start_method=self.start_method)
-
-
-    @parameterized.expand([
-        [False],
-        [True]
-    ])
-    def test_read_subprocess_pipe(self, newlines):
+    def movement_subprocess_pipe(self,
+                                 wrap_when: WRAP_WHEN,
+                                 newlines: bool,
+                                 line_count: int=1) -> (Union[str, ContentWrapper], str):
+        """Reusable source-destination method for subprocesses"""
         # Text in
         text_in = 'a😂' * 10
 
         # Subprocess
-        proc = subprocess.Popen([self.sampleCommandPath, '--manual', text_in, '--lines', '1'],
-                                stdout=PIPE, universal_newlines=newlines, close_fds=True)
+        proc = self.subprocess_factory(text_in=text_in, newlines=newlines, line_count=line_count)
 
         # Destination queues
         dest_q = self.queue_factory()
 
         # Connect the reader
         read_adapter = QueueHandleAdapterReader(dest_q, handle=proc.stdout,
-                                                start_method=self.start_method)
+                                                start_method=self.start_method,
+                                                wrap_when=wrap_when)
 
         # Retrieve the text from the destination queue
         try:
@@ -114,18 +111,16 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                         f'has died for {self.queue_class_path}, '
                         f'and start method {self.start_method}.')
 
-        # If newlines is false the value will be a bytes
-        out_value = wrapper.value
-        text_out = out_value.strip('\n') if newlines else out_value.decode('utf8').strip('\n')
-        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+        return text_in, wrapper
 
-    @parameterized.expand([
-        [False],
-        [True]
-    ])
-    def test_read_multiprocess_connection(self, trusted):
+    def movement_multiprocess_conn(self,
+                                   wrap_when: WRAP_WHEN,
+                                   trusted: bool=True,
+                                   text_len: int=10) -> (Union[str, ContentWrapper], str):
+        """Reusable source-destination method for multiprocess connections"""
         # Text in
-        text_in = 'a😂' * 10
+        faces = '😂' * text_len
+        text_in = faces if text_len == 1 else f'a{faces[:-1]}'  # include leading 'a'
 
         # Subprocess
         c1, c2 = multiprocessing.Pipe()
@@ -137,7 +132,8 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         read_adapter = QueueHandleAdapterReader(dest_q,
                                                 handle=c2,
                                                 start_method=self.start_method,
-                                                trusted=trusted)
+                                                trusted=trusted,
+                                                wrap_when=wrap_when)
 
         # Send the text to the pipe (first connection)
         if trusted:
@@ -161,12 +157,63 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                         f'has died for {self.queue_class_path}, start method {self.start_method}, '
                         f'and {"trusted" if trusted else "untrusted"} Connections.')
 
+        return text_in, wrapper
+
+    @parameterized.expand(itertools.product([True, False], WRAP_WHEN))
+    def test_read_subprocess_pipe(self, newlines, wrap_when):
+        text_in, wrapper = self.movement_subprocess_pipe(wrap_when=wrap_when, newlines=newlines)
+
         # If newlines is false the value will be a bytes
-        if trusted:
-            text_out = wrapper
-        else:
-            text_out = str(wrapper)
+        out_value = wrapper.value if isinstance(wrapper, ContentWrapper) else wrapper
+        text_out = out_value.strip('\n') if newlines else out_value.decode('utf8').strip('\n')
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
+
+    @parameterized.expand(itertools.product([True, False], WRAP_WHEN))
+    def test_read_multiprocess_connection(self, trusted, wrap_when):
+        text_in, wrapper = self.movement_multiprocess_conn(wrap_when=wrap_when, trusted=trusted)
+
+        # Extract value if wrapped
+        text_out = wrapper.value if isinstance(wrapper, ContentWrapper) else wrapper
+
+        # If trusted is false the value will be a bytes
+        if not trusted:
+            text_out = text_out.decode('utf8')
+        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+
+    @parameterized.expand(itertools.product(WRAP_WHEN, [ContentWrapper.THRESHOLD-1,
+                                                        ContentWrapper.THRESHOLD,
+                                                        ContentWrapper.THRESHOLD+1]))
+    def test_wrapping(self, wrap_when, text_len):
+        """Verify that wrapping happens when, and only when, it is supposed to"""
+        text_in, wrapper = self.movement_multiprocess_conn(wrap_when=wrap_when,
+                                                           text_len=text_len)
+
+        # Always
+        if wrap_when == WRAP_WHEN.ALWAYS:
+            self.assertIsInstance(wrapper, ContentWrapper,
+                                  "Wrap is set to Always, but return is not a ContentWrapper")
+
+        # Never
+        if wrap_when == WRAP_WHEN.NEVER:
+            self.assertNotIsInstance(wrapper, ContentWrapper,
+                                     "Wrap is set to Never, but return is a ContentWrapper")
+
+        # Auto
+        if wrap_when == WRAP_WHEN.AUTO:
+            if text_len < ContentWrapper.THRESHOLD:
+                self.assertNotIsInstance(wrapper, ContentWrapper,
+                                         "Wrap is set to Auto and text is under threshold, "
+                                         "but return is a ContentWrapper")
+
+            elif text_len == ContentWrapper.THRESHOLD:
+                self.assertNotIsInstance(wrapper, ContentWrapper,
+                                         "Wrap is set to Auto and text is at threshold, "
+                                         "but return is a ContentWrapper")
+
+            else:
+                self.assertIsInstance(wrapper, ContentWrapper,
+                                      f"Wrap is set to Auto, and text is over threshold but "
+                                      f"return is not a ContentWrapper")
 
 
 if __name__ == "__main__":

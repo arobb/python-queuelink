@@ -10,7 +10,7 @@ import multiprocessing  # For comparisons
 from _io import _IOBase  # For comparisons
 
 from .contentwrapper import ContentWrapper
-from .contentwrapper import TYPES
+from .contentwrapper import TYPES, WRAP_WHEN
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
 from .common import UNION_SUPPORTED_QUEUES
 
@@ -19,7 +19,7 @@ def connection_readline(self):
 
     Also requires:
         An Event be applied as stop_event to know when to stop.
-        A boolean as trusted to use recv_bytes vs recv
+        A boolean as "self.trusted" to use recv_bytes vs recv
 
     conn_obj.readline = connection_wrapper.__get__(conn_obj)
     """
@@ -34,8 +34,7 @@ def connection_readline(self):
                 else:
                     received = self.recv_bytes()
 
-                content = ContentWrapper(received)
-                return content
+                return received
 
         except EOFError:
             return
@@ -51,15 +50,10 @@ def add_methods_to_connections(conn, trusted):
 
 # Works around (https://bryceboe.com/2011/01/28/
 # the-python-multiprocessing-queue-and-large-objects/ with large objects)
-# by using ContentWrapper to buffer large lines to disk
+# by using ContentWrapper to buffer large lines to disk when wrap_when is always or auto
 class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     """Custom manager to capture the output of processes and store them in
-    one more more dedicated thread-safe queues.
-
-    Clients register their own queues.
-
-    Args:
-        handle (handle): Handle to monitor for records
+    one more more dedicated thread-safe or process-safe queues.
     """
 
     def __init__(self,
@@ -69,17 +63,21 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                  log_name: str=None,
                  start_method: str=None,
                  thread_only: bool=None,
-                 trusted: bool=False):
+                 trusted: bool=False,
+                 wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER):
         """
-        Read from a handle and write text lines into a queue.
+        Read lines of text from a handle or pipe and write (line by line) into a queue.
 
-        :param queue:
-        :param handle:
-        :param name:
-        :param log_name:
+        Launches a new thread or process to perform the reading/putting. Prefers a new process,
+        but if the provided queue is from `queue` will switch to using a thread.
+
+        :param queue: Queue to write to
+        :param handle: An open handle or pipe to consume from
+        :param name: Optional name for this reader
+        :param log_name: Optional name for this reader in log lines
         :param thread_only: Force the adapter to use a thread rather than process
-        :param trusted: Whether to trust Connection objects; True uses .send/.recv,
-        False send_bytes/recv_bytes
+        :param trusted: Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
+        :param wrap_when: When to use a ContentWrapper to encapsulate records
         """
         # A multiprocessing.Pipe (Connection) does not have a readline method
         # This checks the type. If not a Connection instance, it returns unchanged
@@ -105,7 +103,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                                          log_name=log_name,
                                          start_method=start_method,
                                          thread_only=thread_only,
-                                         trusted=trusted)
+                                         trusted=trusted,
+                                         wrap_when=wrap_when)
 
     @staticmethod
     def queue_handle_adapter(name,
@@ -113,7 +112,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                              queue,
                              queue_lock,
                              stop_event,
-                             trusted):
+                             trusted,
+                             wrap_when):
         """Copy lines from a given pipe handle into a local threading.Queue
 
         Runs in a separate process, started by __init__. Closes pipe when done
@@ -126,6 +126,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             queue_lock (Lock): Lock used to indicate a write in progress
             stop_event (Event): Used to determine whether to stop the process
             trusted (bool): Whether to trust Connection objects
+            wrap_when (WRAP_WHEN): When to use a ContentWrapper
         """
         logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)
@@ -139,6 +140,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             handle.stop_event = stop_event
 
         log.info('Starting reader process')
+        log.info(f'Queue type: {type(queue)}')
         if handle.closed:
             log.warning('Pipe handle is already closed')
 
@@ -152,19 +154,28 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                 if not line:
                     break
 
+                # Wrap in a ContentWrapper
+                if wrap_when == WRAP_WHEN.NEVER:
+                    content = line
+
+                elif wrap_when == WRAP_WHEN.ALWAYS:
+                    content = ContentWrapper(line)
+
+                elif wrap_when == WRAP_WHEN.AUTO \
+                        and len(line) > ContentWrapper.THRESHOLD:
+                    content = ContentWrapper(line)
+
+                else:
+                    content = line
+
                 log.info('Read line, trying to get a lock')
                 with queue_lock:
-                    log.info('Enqueing line of length %s', len(line))
-                    if isinstance(line, ContentWrapper):  # Wrapped Connections return a CW
-                        log.debug('Content already in ContentWrapper')
-                        queue.put(line)
-                        log.debug('Sent to queue')
-                    else:
-                        log.debug('Wrapping content in ContentWrapper')
-                        line_content = ContentWrapper(line)
-                        log.debug('Wrapped in ContentWrapper')
-                        queue.put(line_content)
-                        log.debug('ContentWrapper sent to queue')
+                    log.info('Enqueing line of length %s', len(content))
+                    if isinstance(content, ContentWrapper):  # Wrapped Connections return a CW
+                        log.debug('Content is in a ContentWrapper')
+
+                    queue.put(content)
+                    log.debug('Sent to queue')
 
                 # Check whether we should stop now
                 if stop_event.is_set():

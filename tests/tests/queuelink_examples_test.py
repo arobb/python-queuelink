@@ -89,6 +89,30 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         text_out = dest_q.get(timeout=1)
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
 
+    def test_reader(self):
+        # Text to send
+        text_in = "a😂" * 10
+
+        # Destination queue
+        dest_q = multiprocessing.Queue()  # Process-based
+
+        # Subprocess, simple example sending some text to stdout
+        # from subprocess import Popen, PIPE
+        proc = Popen(['echo', '-n', text_in],  # -n prevents echo from adding a newline character
+                     stdout=PIPE,
+                     universal_newlines=True,
+                     close_fds=True)
+
+        # Connect the reader
+        # from queuelink import QueueHandleAdapterReader
+        read_adapter = QueueHandleAdapterReader(queue=dest_q,
+                                                handle=proc.stdout)
+
+        # Get the text from the queue
+        text_out = dest_q.get()
+        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(QueueLinkExampleTestCase)
     unittest.TextTestRunner(verbosity=2).run(suite)

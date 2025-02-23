@@ -16,6 +16,7 @@ from queue import Empty
 from tests.tests import context
 from queuelink import Timer
 from queuelink import QueueLink
+from queuelink import DIRECTION
 from queuelink.queuelink import is_threaded
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 
@@ -67,8 +68,7 @@ class QueueLinkTestCase(unittest.TestCase):
     def test_queuelink_get_client_id(self):
         queue_proxy = self.queue_factory()
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
-        client_id = queue_link.register_queue(queue_proxy=queue_proxy,
-                                              direction="source")
+        client_id = queue_link.register_source(queue_proxy=queue_proxy)
         queue_link.close()
 
         self.assertIsNotNone(client_id,
@@ -87,10 +87,8 @@ class QueueLinkTestCase(unittest.TestCase):
         dest_q = self.queue_factory()
         queue_link = QueueLink(name="test_link", thread_only=True)
 
-        source_id = queue_link.register_queue(queue_proxy=source_q,
-                                              direction="source")
-        dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                              direction="destination")
+        source_id = queue_link.register_source(queue_proxy=source_q)
+        dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
         publisher = queue_link.client_pair_publishers[source_id]
 
@@ -114,10 +112,8 @@ class QueueLinkTestCase(unittest.TestCase):
 
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
-        source_id = queue_link.register_queue(queue_proxy=source_q,
-                                              direction="source")
-        dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                            direction="destination")
+        source_id = queue_link.register_source(queue_proxy=source_q)
+        dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
         publisher = queue_link.client_pair_publishers[source_id]
 
@@ -131,8 +127,8 @@ class QueueLinkTestCase(unittest.TestCase):
         queue_link.stop()
 
     @parameterized.expand([
-        ["source"],
-        ["destination"]
+        [DIRECTION.FROM],
+        [DIRECTION.TO]
     ])
     def test_queuelink_prevent_multiple_entries(self, direction):
         """Don't allow a user to add the same proxy to a direction multiple
@@ -142,8 +138,7 @@ class QueueLinkTestCase(unittest.TestCase):
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         # Add the queue once
-        queue_link.register_queue(queue_proxy=q,
-                                  direction=direction)
+        queue_link.register_destination(queue_proxy=q)
 
         # Should raise an error the next time
         self.assertRaises(ValueError,
@@ -152,8 +147,8 @@ class QueueLinkTestCase(unittest.TestCase):
                           direction=direction)
 
     @parameterized.expand([
-        ["source", "destination"],
-        ["destination", "source"]
+        [DIRECTION.FROM, DIRECTION.TO],
+        [DIRECTION.TO, DIRECTION.FROM]
     ])
     def test_queuelink_prevent_cyclic_graph(self,
                                             start_direction,

@@ -4,10 +4,19 @@ import queue
 import multiprocessing
 import random
 
+from enum import Enum
 from multiprocessing import queues as mp_queue_classes
 from typing import List, Union
 
 from multiprocessing.managers import BaseProxy
+
+# Directions (source/destination)
+class DIRECTION(Enum):
+    def __str__(self):
+        return str(self.value)
+
+    FROM = 'source'
+    TO = 'destination'
 
 # Ways to start a process
 PROC_START_METHODS = ['fork', 'forkserver', 'spawn']

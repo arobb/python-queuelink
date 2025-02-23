@@ -17,7 +17,7 @@ With standard queues
 ::
 
     from queue import Queue
-    from queuelink import QueueLink
+    from queuelink import QueueLink, DIRECTION
 
     # Source and destination queues
     source_q = Queue()
@@ -27,10 +27,8 @@ With standard queues
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.register_queue(queue_proxy=source_q,
-                                          direction="source")
-    dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                        direction="destination")
+    source_id = queue_link.register_source(queue_proxy=source_q)
+    dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
     # Text to send
     text_in = "a😂" * 10
@@ -49,7 +47,7 @@ With a process manager
 ::
 
     from multiprocessing import Manager
-    from queuelink import QueueLink
+    from queuelink import QueueLink, DIRECTION
 
     # Create the multiprocessing.Manager
     manager = Manager()
@@ -62,10 +60,8 @@ With a process manager
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.register_queue(queue_proxy=source_q,
-                                          direction="source")
-    dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                        direction="destination")
+    source_id = queue_link.register_source(queue_proxy=source_q)
+    dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
     # Text to send
     text_in = "a😂" * 10
@@ -120,11 +116,43 @@ Tested against the following queue implementations:
 
 Implementation
 ==============
-QueueLink creates a new process for each source queue, regardless of the number of downstream queues. The linking thread/process gets each element on the source queue and iterates over and puts to the set of destination queues.
+QueueLink creates a new thread or process for each source queue, regardless of the number of downstream queues. The linking thread/process gets each element of the source queue and iterates over and puts to the set of destination queues.
 
 Multiprocessing
 ---------------
 Start Method: QueueLink is tested against fork, forkserver, and spawn start methods. It defaults to the system preference, but can be overridden by passing the preferred start method name to the class "start_method" parameter.
+
+Linking with other channels
+===========================
+QueueLink includes two "adapters" to link queues with inbound and outbound connections.
+
+Inbound Connections
+-------------------
+To quickly link a pipe or handle with a queue, use ``QueueHandleAdapterReader``. The Reader Adapter is tested against Multiprocessing Connections and Subprocess pipes. It calls ``flush`` and ``readline`` to consume from handles, so it should work against any object implementing those methods, with ``readline`` returning a string or byte array. For Multiprocessing Connections, the adapter injects a no-op ``flush`` method and a custom ``readline`` method.
+
+::
+
+    # Text to send
+    text_in = "a😂" * 10
+
+    # Destination queue
+    dest_q = multiprocessing.Queue()  # Process-based
+
+    # Subprocess, simple example sending some text to stdout
+    # from subprocess import Popen, PIPE
+    proc = Popen(['echo', '-n', text_in],  # -n prevents echo from adding a newline character
+                 stdout=PIPE,
+                 universal_newlines=True,
+                 close_fds=True)
+
+    # Connect the reader
+    # from queuelink import QueueHandleAdapterReader
+    read_adapter = QueueHandleAdapterReader(queue=dest_q,
+                                            handle=proc.stdout)
+
+    # Get the text from the queue
+    text_out = dest_q.get()
+    print(text_out)
 
 Other Notes
 ===========

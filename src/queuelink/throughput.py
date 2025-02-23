@@ -17,7 +17,7 @@ from queue import Empty
 from threading import Thread  # For non-multi-processing queues
 from typing import Union
 
-from queuelink import QueueLink
+from queuelink import QueueLink, DIRECTION
 from queuelink.metrics import Metrics
 from queuelink.timer import Timer
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST, is_threaded
@@ -149,7 +149,7 @@ class Throughput_QueueLink(Throughput):
 
         # Start the timer and register the destination queue (starting the link)
         start = Timer.now()
-        queue_link.register_queue(queue_proxy=dest_q, direction='destination')
+        queue_link.register_queue(queue_proxy=dest_q, direction=DIRECTION.TO)
 
         # Start trying to get the element
         object_out = self.get_from_q(dest_q)

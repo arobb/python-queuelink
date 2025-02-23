@@ -12,7 +12,7 @@ from _io import _IOBase  # For comparisons
 from .contentwrapper import ContentWrapper
 from .contentwrapper import TYPES, WRAP_WHEN
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
-from .common import UNION_SUPPORTED_QUEUES
+from .common import UNION_SUPPORTED_QUEUES, DIRECTION
 
 def connection_readline(self):
     """Adds a readline method for multiprocessing.connection.Connection objects
@@ -97,7 +97,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         # Py3 supports super().__init__; this form is kept for backward compat
         super(type(self), self).__init__(queue=queue,
                                          subclass_name=__name__,
-                                         queue_direction="source",
+                                         queue_direction=DIRECTION.FROM,
                                          name=name,
                                          handle=handle,
                                          log_name=log_name,

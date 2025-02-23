@@ -22,13 +22,15 @@ from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
 from .timer import Timer
 from .metrics import Metrics
+from .common import DIRECTION
 from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
 from .common import new_id, is_threaded
+
 
 def validate_direction(func):
     """Decorator to check that 'direction' is an acceptable value.
 
-    One of 'source' or 'destination'.
+    One of DIRECTION.FROM or DIRECTION.TO.
 
     :raises TypeError
     """
@@ -44,13 +46,13 @@ def validate_direction(func):
             arg_direction = bound.arguments['direction']
 
             # If the direction is valid, just keep going
-            if arg_direction in ("source", "destination"):
+            if arg_direction in DIRECTION:
                 pass
 
             # If the direction is invalid, throw an error
             else:
                 raise TypeError(
-                    "destination must be 'source' or 'destination'")
+                    "destination must be a value from DIRECTION")
 
         # Call the normal function
         return func(*args, **kwargs)
@@ -165,14 +167,14 @@ class QueueLink(ClassTemplate):
 
         # Short-circut usage
         if source:
-            self.register_queue(queue_proxy=source, direction='source')
+            self.register_queue(queue_proxy=source, direction=DIRECTION.FROM)
 
         if destination:
             if not isinstance(destination, list):
                 destination = [destination]
 
             for q_inst in destination:
-                self.register_queue(queue_proxy=q_inst, direction='destination')
+                self.register_queue(queue_proxy=q_inst, direction=DIRECTION.TO)
 
 
     # Class contains Locks and Queues which cannot be pickled
@@ -387,7 +389,7 @@ class QueueLink(ClassTemplate):
         return queue_list[text(queue_id)]
 
     @validate_direction
-    def register_queue(self, queue_proxy, direction: str) -> str:
+    def register_queue(self, queue_proxy, direction: DIRECTION) -> str:
         """Register a multiprocessing.JoinableQueue to this link
 
         For a new "source" queue, a publishing process will be created to send
@@ -401,15 +403,14 @@ class QueueLink(ClassTemplate):
 
         Args:
             queue_proxy (QueueProxy): Proxy object to a JoinableQueue
-            direction (string): source or destination
+            direction (DIRECTION): FROM or TO
 
         Returns:
             string. The client's ID for access to this queue
 
         """
-        # Lowercase
-        direction = direction.lower()
-        op_direction = "destination" if direction == "source" else "source"
+        # Calculate the opposite direction
+        op_direction = DIRECTION.TO if direction == DIRECTION.FROM else DIRECTION.FROM
 
         # Warnings
         # Priority Queues
@@ -418,17 +419,15 @@ class QueueLink(ClassTemplate):
                            'simple class with a priority value) or the queue will block.')
 
         # SimpleQueues
-        if direction == 'source' and isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
+        if direction == DIRECTION.FROM and isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
             self._log.warning('Using multiple readers on a SimpleQueue that is a source for a '
                            'QueueLink instance (including other QueueLink instances) can cause a '
                            f'deadlock. Queue type: {type(queue_proxy)}.')
 
         with self.queues_lock:
             # Get the queue list and opposite queue list
-            queue_dict = getattr(self, "client_queues_{}"
-                                 .format(direction))
-            op_queue_dict = getattr(self, "client_queues_{}"
-                                    .format(op_direction))
+            queue_dict = getattr(self, f'client_queues_{direction}')
+            op_queue_dict = getattr(self, f'client_queues_{op_direction}')
 
             # Make sure we don't accidentally create a loop, or add multiple
             # times
@@ -451,7 +450,7 @@ class QueueLink(ClassTemplate):
             # New source:
             #   Just add a new publishing process and send it the list of
             #   destinations.
-            if direction == "source":
+            if direction == DIRECTION.FROM:
                 self._log.debug("Registering source client")
                 source_id = queue_id
 
@@ -479,6 +478,28 @@ class QueueLink(ClassTemplate):
                     self._start_publisher(source_id)
 
         return text(queue_id)
+
+    def register_source(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+        """Register a source queue
+
+        Args:
+            queue_proxy (QueueProxy): Queue or proxy object to a queue
+
+        Returns:
+            string. The client's ID for access to this queue
+        """
+        return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.FROM)
+
+    def register_destination(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+        """Register a destination queue
+
+        Args:
+            queue_proxy (QueueProxy): Queue or proxy object to a queue
+
+        Returns:
+            string. The client's ID for access to this queue
+        """
+        return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.TO)
 
     def _start_publisher(self, source_id: str):
         """Eliminate duplicated Process() call in register_queue
@@ -572,30 +593,30 @@ class QueueLink(ClassTemplate):
             self._stop_publisher(source_id)
 
     @validate_direction
-    def unregister_queue(self, queue_id: Union[str, int], direction: str, start_method: str=None):
+    def unregister_queue(self,
+                         queue_id: Union[str, int],
+                         direction: DIRECTION,
+                         start_method: str=None):
         """Detach a Queue proxy from this _QueueHandleAdapterBase
 
         Returns the clientId that was removed
 
         Args:
             queue_id (string): ID of the client
-            direction (string): source or destination
+            direction (DIRECTION): source or destination
             start_method (string): How to start a process-based publisher (fork, forkserver, spawn)
 
         Returns:
             string. ID of the client queue
 
         """
-        # Lowercase
-        direction = direction.lower()
-
         with self.queues_lock:
             queue_list = getattr(self,
                                  "client_queues_{}".format(direction))
             if text(queue_id) in queue_list:
                 queue_list.pop(queue_id)
 
-            if direction == "source":
+            if direction == DIRECTION.FROM:
                 source_id = queue_id
 
                 # Stop the source publisher
@@ -698,18 +719,16 @@ class QueueLink(ClassTemplate):
         return drained
 
     @validate_direction
-    def destructive_audit(self, direction: str):
+    def destructive_audit(self, direction: DIRECTION):
         """Print a line from each client Queue from the provided direction
 
         Args:
-            direction (string): source or destination
+            direction (DIRECTION): source or destination
 
         This is a destructive operation, as it *removes* a line from each Queue
 
         :raises Empty
         """
-        direction = direction.lower()
-
         def get_nowait(queue_proxy):
             """Not all queues have a get_nowait method"""
             try:

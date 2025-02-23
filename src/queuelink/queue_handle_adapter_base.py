@@ -12,7 +12,7 @@ from threading import Thread  # For non-multi-processing queues
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
 from .contentwrapper import WRAP_WHEN
-from .common import UNION_SUPPORTED_QUEUES
+from .common import UNION_SUPPORTED_QUEUES, DIRECTION
 from .common import is_threaded
 
 
@@ -20,7 +20,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
     def __init__(self,
                  queue,
                  subclass_name: str,
-                 queue_direction: str,
+                 queue_direction: DIRECTION,
                  name:str =None,
                  handle=None,
                  log_name:str =None,
@@ -31,8 +31,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
         """QueuePipeAdapter abstract implementation
 
         Args:
-             queue_direction (string): Indicate direction relative to pipe;
-                e.g. for PrPipeReader from stdout, the flow is (PIPE => QUEUE)
+             queue_direction (DIRECTION): Indicate direction relative to pipe;
+                e.g. from stdout, the flow is (PIPE => QUEUE)
                 => CLIENT QUEUES (from pipe/queue into client queues), and
                 therefore queue_direction would be "source".
              trusted: Whether to trust Connection objects; True uses .send/.recv,
@@ -59,8 +59,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Which "direction" client queues will use in the queue_link
         self.queue_direction = queue_direction
-        self.client_direction = "source" if queue_direction == "destination" \
-            else "destination"
+        self.client_direction = DIRECTION.FROM if queue_direction == DIRECTION.TO \
+            else DIRECTION.TO
 
         # Whether to use only threading (vs multiprocessing)
         self.thread_only = thread_only

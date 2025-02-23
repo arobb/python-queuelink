@@ -4,10 +4,13 @@ import multiprocessing
 import os
 import unittest
 from multiprocessing import Manager
+from subprocess import Popen, PIPE
 from tests.tests import context
 
 from queue import Queue
 from queuelink import QueueLink
+from queuelink import QueueHandleAdapterReader
+from queuelink import DIRECTION
 
 
 class QueueLinkExampleTestCase(unittest.TestCase):
@@ -26,10 +29,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link")
 
         # Connect queues to the QueueLink
-        source_id = queue_link.register_queue(queue_proxy=source_q,
-                                              direction="source")
-        dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                            direction="destination")
+        source_id = queue_link.register_source(queue_proxy=source_q)
+        dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
         # Text to send
         text_in = "a😂" * 10
@@ -50,10 +51,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link")
 
         # Connect queues to the QueueLink
-        source_id = queue_link.register_queue(queue_proxy=source_q,
-                                              direction="source")
-        dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                            direction="destination")
+        source_id = queue_link.register_source(queue_proxy=source_q)
+        dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
         # Text to send
         text_in = "a😂" * 10
@@ -77,10 +76,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link")
 
         # Connect queues to the QueueLink
-        source_id = queue_link.register_queue(queue_proxy=source_q,
-                                              direction="source")
-        dest_id = queue_link.register_queue(queue_proxy=dest_q,
-                                            direction="destination")
+        source_id = queue_link.register_source(queue_proxy=source_q)
+        dest_id = queue_link.register_destination(queue_proxy=dest_q)
 
         # Text to send
         text_in = "a😂" * 10

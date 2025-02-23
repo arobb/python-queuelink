@@ -111,6 +111,9 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                         f'has died for {self.queue_class_path}, '
                         f'and start method {self.start_method}.')
 
+        finally:
+            read_adapter.close()
+
         return text_in, wrapper
 
     def movement_multiprocess_conn(self,
@@ -156,6 +159,17 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
             raise Empty('Destination queue is empty because the publisher process '
                         f'has died for {self.queue_class_path}, start method {self.start_method}, '
                         f'and {"trusted" if trusted else "untrusted"} Connections.')
+
+        finally:
+            for conn in [c1, c1]:
+                try:
+                    c1.close()
+                    c2.close()
+
+                except OSError as e:
+                    # Bad file descriptor / handle is closed
+                    if e.errno != 9:
+                        raise e
 
         return text_in, wrapper
 

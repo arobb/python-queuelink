@@ -39,6 +39,14 @@ def connection_readline(self):
         except EOFError:
             return
 
+        except OSError as e:
+            # Bad file descriptor / handle is closed
+            if e.errno == 9:
+                return
+
+            # Some other OS error
+            raise e
+
 def add_methods_to_connections(conn, trusted):
     if isinstance(conn, multiprocessing.connection.Connection):
         conn.readline = connection_readline.__get__(conn)
@@ -183,6 +191,16 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                     break
 
             log.info('Closing pipe handle')
-            handle.close()
+            try:
+                handle.close()
+            except OSError as e:
+                if e.errno != 9:  # OSError: [Errno 9] Bad file descriptor
+                    raise e
+
+            # Clean up references
+            # Prevent "UserWarning: ResourceTracker called reentrantly for resource cleanup,
+            # which is unsupported. The semaphore object '/<name>' might leak."
+            queue_lock = None
+            stop_event = None
 
         log.info('Sub-process complete')

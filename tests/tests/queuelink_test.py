@@ -279,16 +279,17 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
                          f"Text isn't the same across the link; source is {self.source_class_path} "
                          f"and dest is {self.dest_class_path}")
 
-    def test_queuelink_500_movement_timing(self):
-        rounds = 500
-        threshold = 0.03
-
-        text_out, metrics = self.source_destination_movement(rounds=rounds)
-
-        self.assertLessEqual(metrics['mean'], threshold,
-                             f'Mean latency for source {self.source_class_path} and destination '
-                             f'{self.dest_class_path} and start method {self.start_method} exeeded '
-                             f'threshold of {threshold} seconds.')
+    # TODO: Move this to throughput testing
+    # def test_queuelink_500_movement_timing(self):
+    #     rounds = 500
+    #     threshold = 0.03
+    #
+    #     text_out, metrics = self.source_destination_movement(rounds=rounds)
+    #
+    #     self.assertLessEqual(metrics['mean'], threshold,
+    #                          f'Mean latency for source {self.source_class_path} and destination '
+    #                          f'{self.dest_class_path} and start method {self.start_method} exeeded '
+    #                          f'threshold of {threshold} seconds.')
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 ---------
 QueueLink
 ---------
-The QueueLink library simplifies several queue patterns including linking queues together with one-to-many or many-to-one relationships, and supports reading and writing to text-based files.
+The QueueLink library simplifies several queue patterns including linking queues together with one-to-many or many-to-one relationships. "Adapters" support reading and writing text-based files.
 
 Use
 ===

@@ -482,7 +482,7 @@ class QueueLink(ClassTemplate):
 
         return text(queue_id)
 
-    def register_source(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+    def read(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
         """Register a source queue
 
         Args:
@@ -493,7 +493,7 @@ class QueueLink(ClassTemplate):
         """
         return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.FROM)
 
-    def register_destination(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+    def write(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
         """Register a destination queue
 
         Args:

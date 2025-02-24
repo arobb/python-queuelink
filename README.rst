@@ -27,8 +27,8 @@ With standard queues
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.register_source(queue_proxy=source_q)
-    dest_id = queue_link.register_destination(queue_proxy=dest_q)
+    source_id = queue_link.read(queue_proxy=source_q)
+    dest_id = queue_link.write(queue_proxy=dest_q)
 
     # Text to send
     text_in = "a😂" * 10
@@ -60,8 +60,8 @@ With a process manager
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.register_source(queue_proxy=source_q)
-    dest_id = queue_link.register_destination(queue_proxy=dest_q)
+    source_id = queue_link.read(queue_proxy=source_q)
+    dest_id = queue_link.write(queue_proxy=dest_q)
 
     # Text to send
     text_in = "a😂" * 10

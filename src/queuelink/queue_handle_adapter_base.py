@@ -5,9 +5,10 @@ from __future__ import unicode_literals
 import random
 import sys
 
-import multiprocessing
-
 from threading import Thread  # For non-multi-processing queues
+
+# Multiprocessing imports
+import multiprocessing
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet

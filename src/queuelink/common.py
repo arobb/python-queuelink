@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """Shared constants and functions"""
 import queue
-import multiprocessing
 import random
 
 from enum import Enum
 from multiprocessing import queues as mp_queue_classes
 from typing import List, Union
 
+# Multiprocessing imports
+import multiprocessing
+from multiprocessing import Event as mp_Event
+from multiprocessing import queues as mp_queue_classes
 from multiprocessing.managers import BaseProxy
 
 # Directions (source/destination)

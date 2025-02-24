@@ -7,17 +7,20 @@ from typing import List, Union
 
 import functools
 import logging
-import multiprocessing
 import queue
 import time
 
 from builtins import str as text
 from inspect import signature
-from multiprocessing import queues as mp_queue_classes
-from multiprocessing.managers import BaseProxy
 from queue import Empty
 from threading import Thread  # For non-multi-processing queues
 
+# Multiprocessing imports
+import multiprocessing
+from multiprocessing import queues as mp_queue_classes
+from multiprocessing.managers import BaseProxy
+
+# Internal imports
 from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
 from .timer import Timer

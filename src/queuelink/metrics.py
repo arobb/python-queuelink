@@ -1,5 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Class to handle metrics for QueueLink"""
+"""Class to handle metrics for QueueLink
+
+from time import sleep
+from metrics import Metrics
+
+metrics = Metrics()
+id = metrics.add_element(type='timing', name='')
+metrics.start(id)
+sleep(1)
+metrics.lap(id)
+out = metrics.get_all_data()
+out{ id: {'name': None, 'data_point_count': 2, 'mean': int, 'median': int, 'stddev': int} }
+
+metrics = Metrics()
+id = metrics.add_element(type='counting', name='')
+metrics.increment(id)
+out = metrics.get_all_data()
+out{ id: {'name': None, 'count': 1} }
+"""
 from __future__ import unicode_literals
 from __future__ import annotations
 
@@ -47,16 +65,12 @@ class TimedMetric(BaseMetric):
         """Start timing"""
         self.timer = Timer(interval=self.interval)
         self.start_time_epoch = self.timer.start_time
-        self.last_lap = self.start_time_epoch
+        self.last_lap = 0
 
     def lap(self):
         """Count when an event occurs"""
         seconds_since_start = self.timer.lap()
-
-        if len(self.data_points) > 0:
-            seconds_since_last_lap = seconds_since_start - self.last_lap
-        else:
-            seconds_since_last_lap = seconds_since_start
+        seconds_since_last_lap = seconds_since_start - self.last_lap
 
         self.last_lap = seconds_since_start
         self._update_values(new_value=seconds_since_last_lap)
@@ -119,9 +133,9 @@ class Metrics(ClassTemplate):
             self._log.warning(f'Element ID: {element_id}')
 
         if type == 'timing':
-            m = TimedMetric()
+            m = TimedMetric(name=name)
         elif type == 'counting':
-            m = CountMetric()
+            m = CountMetric(name=name)
 
         self.elements[element_id] = {'name': name,
                                      'metrics': m}

@@ -7,6 +7,8 @@ import time
 
 class Timer:
     """Used to help time events."""
+    SEC_TO_MICRO = 10**6
+    SEC_TO_NANO = 10**9
 
     def __init__(self, interval=10):
         """Timing events: Establish start time reference for lap and interval
@@ -18,6 +20,7 @@ class Timer:
         """
         self.interval_period = interval
         self.start_time = self.now()
+        self.start_moment_ns = time.perf_counter_ns()
         self.last_interval_count = 0
 
     @staticmethod
@@ -29,15 +32,34 @@ class Timer:
         :return: float seconds
         """
         current = time.mktime(datetime.datetime.now().timetuple()) \
-            + datetime.datetime.now().microsecond / 1000000.0
+            + datetime.datetime.now().microsecond / float(Timer.SEC_TO_MICRO)
 
         return float(current)
+
+    @staticmethod
+    def now_micro():
+        """Returns the current Unix epoch time in microseconds as an int
+
+        Returned value has resolution to microseconds.
+
+        :return: int seconds
+        """
+        current = time.mktime(datetime.datetime.now().timetuple()) * Timer.SEC_TO_MICRO \
+                  + datetime.datetime.now().microsecond
+
+        return int(current)
+
+    def lap_ns(self):
+        """Return nanoseconds since this instance was created.
+
+        :return: int"""
+        return time.perf_counter_ns() - self.start_moment_ns
 
     def lap(self):
         """Return seconds since this instance was created.
 
         :return: float"""
-        return self.now() - self.start_time
+        return self.lap_ns() / Timer.SEC_TO_NANO
 
     def interval(self):
         """Return True if we have exceeded the interval since we started or
@@ -46,8 +68,8 @@ class Timer:
         :return: bool"""
 
         # Get the current lap time
-        lap = int(self.lap() * 1000000)  # full resolution as an int
-        interval = int(self.interval_period * 1000000)
+        lap = self.lap_ns()  # Nanoseconds
+        interval = int(self.interval_period * Timer.SEC_TO_NANO)
 
         # How many intervals have elapsed since this instance was created?
         interval_count_float = lap / interval  # integer division

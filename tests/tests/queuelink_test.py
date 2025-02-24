@@ -220,8 +220,7 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
         queue_link = QueueLink(source=source_q,
                                destination=dest_q,
                                name="movement_timing_test_link",
-                               start_method=self.start_method,
-                               link_timeout=self.timeout)
+                               start_method=self.start_method)
 
         text_in = self.test_text
 

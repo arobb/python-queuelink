@@ -20,6 +20,7 @@ from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 from queuelink import QueueLink
 from queuelink import QueueHandleAdapterReader
 from queuelink import ContentWrapper, WRAP_WHEN
+from queuelink import safe_get
 
 # Queue type list plus start methods
 CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
@@ -97,8 +98,7 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         # Retrieve the text from the destination queue
         try:
-            wrapper = QueueLink._queue_get_with_timeout(queue_proxy=dest_q,
-                                                        timeout=self.timeout)
+            wrapper = safe_get(queue_proxy=dest_q, timeout=self.timeout)
 
             # Mark we pulled it for JoinableQueues
             if hasattr(dest_q, 'task_done'):
@@ -146,8 +146,7 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         # Pull the value
         try:
-            wrapper = QueueLink._queue_get_with_timeout(queue_proxy=dest_q,
-                                                        timeout=self.timeout)
+            wrapper = safe_get(queue_proxy=dest_q, timeout=self.timeout)
 
             # Mark we pulled it for JoinableQueues
             if hasattr(dest_q, 'task_done'):

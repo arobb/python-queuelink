@@ -17,7 +17,7 @@ from queue import Empty
 from threading import Thread  # For non-multi-processing queues
 from typing import Union
 
-from queuelink import QueueLink, DIRECTION
+from queuelink import QueueLink, DIRECTION, safe_get
 from queuelink.metrics import Metrics
 from queuelink.timer import Timer
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST, is_threaded
@@ -134,8 +134,7 @@ class Throughput_QueueLink(Throughput):
         return self.queue_factory(module=self.dest_module, class_name=self.dest_class)
 
     def get_from_q(self, target_q):
-        return QueueLink._queue_get_with_timeout(queue_proxy=target_q,
-                                                 timeout=self.timeout)
+        return safe_get(queue_proxy=target_q, timeout=self.timeout)
 
     def time_to_first_element(self):
         """Measure how long it takes for the first element to be available"""

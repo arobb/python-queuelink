@@ -27,7 +27,7 @@ from .timer import Timer
 from .metrics import Metrics
 from .common import DIRECTION
 from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
-from .common import new_id, is_threaded
+from .common import new_id, is_threaded, safe_get
 
 
 def validate_direction(func):
@@ -257,46 +257,6 @@ class QueueLink(ClassTemplate):
         self._stop_publishers()
 
     @staticmethod
-    def _queue_get_with_timeout(queue_proxy, timeout: float=0, stop_event: Event=None):
-        """Queue get implementation that implements partial timeout for all Queue types including
-        SimpleQueues.
-
-        :raises queue.Empty
-        """
-        timer = Timer(interval=timeout)
-        cycle_time = 0.005  # 5ms helps quickly iterate over SimpleQueues
-
-        try:
-            return queue_proxy.get(timeout=timeout)
-
-        except TypeError:
-            while True:
-                # Asked to stop, so just stop
-                if stop_event and stop_event.is_set():
-                    return
-
-                # Alternate timer
-                if timer.interval():
-                    raise Empty
-
-                # Check if the queue has a get_nowait method, equivalent to get(timeout=0)
-                # This probably won't be available if get(timeout=) failed, but checking anyway
-                if hasattr(queue_proxy, "get_nowait"):
-                    try:
-                        return queue_proxy.get_nowait()
-                    except Empty:
-                        continue
-
-                # SimpleQueues don't have a get_nowait method/mechanism
-                # Try not to get stuck, but can't guarantee that another thread hasn't
-                # grabbed one
-                if queue_proxy.empty():
-                    time.sleep(cycle_time)
-                    continue
-
-                return queue_proxy.get()
-
-    @staticmethod
     def _publisher(stop_event,
                    source_id,
                    source_queue,
@@ -340,9 +300,9 @@ class QueueLink(ClassTemplate):
             try:
                 log.debug("Trying to get line from source in pair %s",
                           source_id)
-                line = QueueLink._queue_get_with_timeout(source_queue,
-                                                         timeout=timeout,
-                                                         stop_event=stop_event)
+                line = safe_get(source_queue,
+                                timeout=timeout,
+                                stop_event=stop_event)
 
                 # Distribute the line to all downstream queues
                 for dest_id, dest_queue in dest_queues_dict.items():

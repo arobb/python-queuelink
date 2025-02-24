@@ -9,6 +9,7 @@ from queuelink.common import DIRECTION
 from queuelink.queuelink import QueueLink
 from queuelink.timer import Timer
 from queuelink.common import UNION_SUPPORTED_QUEUES
+from queuelink.common import safe_get
 
 # Pipe adapters
 from queuelink.contentwrapper import ContentWrapper

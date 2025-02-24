@@ -17,6 +17,7 @@ from tests.tests import context
 from queuelink import Timer
 from queuelink import QueueLink
 from queuelink import DIRECTION
+from queuelink import safe_get
 from queuelink.queuelink import is_threaded
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 
@@ -233,38 +234,30 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
             source_q.put(input)
 
             # Pull the value
-            while True:
-                if timer.interval():
-                    raise TimeoutError(f'Timeout for source {self.source_class_path}, '
-                                        f'destination {self.dest_class_path}, and start '
-                                        f'method {self.start_method}.')
+            try:
+                object_out = safe_get(queue_proxy=dest_q, timeout=self.timeout)
+                text_out = object_out[1] if source_q_class == "PriorityQueue" else object_out
 
-                try:
-                    object_out = QueueLink._queue_get_with_timeout(queue_proxy=dest_q,
-                                                                   timeout=self.timeout)
-                    text_out = object_out[1] if source_q_class == "PriorityQueue" else object_out
+                # Mark we pulled it for JoinableQueues
+                if hasattr(dest_q, 'task_done'):
+                    dest_q.task_done()
 
-                    # Mark we pulled it for JoinableQueues
-                    if hasattr(dest_q, 'task_done'):
-                        dest_q.task_done()
+                # Move to the next item
+                continue
 
-                    # Move to the next item
-                    break
+            except Empty:
+                link_alive = queue_link.is_alive()
 
-                except Empty:
-                    link_alive = queue_link.is_alive()
+                if link_alive:
+                    raise Empty(f'Timeout for source {self.source_class_path}, '
+                                f'destination {self.dest_class_path}, and start '
+                                f'method {self.start_method}.')
 
-                    if link_alive:
-                        if timer.interval():
-                            raise Empty(f'Timeout for source {self.source_class_path}, '
-                                        f'destination {self.dest_class_path}, and start '
-                                        f'method {self.start_method}.')
-
-                    else:
-                        raise Empty('Destination queue is empty because the publisher process '
-                                    f'has died for source {self.source_class_path}, destination '
-                                    f'{self.dest_class_path}, and start '
-                                    f'method {self.start_method}.')
+                else:
+                    raise Empty('Destination queue is empty because the publisher process '
+                                f'has died for source {self.source_class_path}, destination '
+                                f'{self.dest_class_path}, and start '
+                                f'method {self.start_method}.')
 
         # Shut down publisher processes
         # Resolves:

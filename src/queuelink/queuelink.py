@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Manages the pull/push with queues"""
 from __future__ import unicode_literals
-from __future__ import annotations
 
 from typing import List, Union
 

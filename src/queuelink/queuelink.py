@@ -119,7 +119,7 @@ class QueueLink(ClassTemplate):
                  log_name: str=None,
                  start_method: str=None,
                  thread_only: bool=False,
-                 link_timeout: float=0.1):
+                 link_timeout: float=0.01):
         """Manages the pull/push with queues
 
         :param UNION_SUPPORTED_QUEUES source: Queue to act as the source
@@ -129,7 +129,7 @@ class QueueLink(ClassTemplate):
             or just class name if ``name`` is not provided
         :param str start_method: For multi-process use: fork, spawn or forkserver
         :param bool thread_only: Only use threads, not separate processes, for links
-        :param float link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.1 sec
+        :param float link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.01 sec
         """
         # Unique ID
         # Not used for cryptographic purposes, so excluding from Bandit

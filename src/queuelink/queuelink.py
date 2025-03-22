@@ -684,18 +684,6 @@ class QueueLink(ClassTemplate):
 
         :raises Empty
         """
-        def get_nowait(queue_proxy):
-            """Not all queues have a get_nowait method"""
-            try:
-                return queue_proxy.get_nowait()
-
-            except AttributeError:
-                # Try not to get stuck, but can't guarantee that another thread hasn't grabbed one
-                if queue_proxy.empty():
-                    raise Empty
-
-                return queue_proxy.get()
-
         with self.queues_lock:
             queue_list = getattr(self, f'client_queues_{direction}')
 

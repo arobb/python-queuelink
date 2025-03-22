@@ -18,8 +18,8 @@ from multiprocessing.managers import BaseProxy
 # Internal imports; keep to minimum to prevent cyclical dependencies
 from .timer import Timer
 
-# Directions (source/destination)
 class DIRECTION(Enum):
+    """Directions (from source/to destination)"""
     def __str__(self):
         return str(self.value)
 
@@ -88,6 +88,7 @@ def is_threaded(queue_list: Union[List, UNION_SUPPORTED_QUEUES]):
     return False
 
 def new_id():
+    """Create a reasonably unique ID string."""
     return ''.join([random.choice(  # nosec
                '0123456789ABCDEF') for x in range(6)])
 

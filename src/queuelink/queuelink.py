@@ -299,9 +299,7 @@ class QueueLink(ClassTemplate):
             try:
                 log.debug("Trying to get line from source in pair %s",
                           source_id)
-                line = safe_get(source_queue,
-                                timeout=timeout,
-                                stop_event=stop_event)
+                line = safe_get(source_queue, timeout=timeout, stop_event=stop_event)
 
                 # Distribute the line to all downstream queues
                 for dest_id, dest_queue in dest_queues_dict.items():

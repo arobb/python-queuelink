@@ -98,7 +98,7 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         # Retrieve the text from the destination queue
         try:
-            wrapper = safe_get(queue_proxy=dest_q, timeout=self.timeout)
+            wrapper = safe_get(queue_obj=dest_q, timeout=self.timeout)
 
             # Mark we pulled it for JoinableQueues
             if hasattr(dest_q, 'task_done'):
@@ -146,7 +146,7 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         # Pull the value
         try:
-            wrapper = safe_get(queue_proxy=dest_q, timeout=self.timeout)
+            wrapper = safe_get(queue_obj=dest_q, timeout=self.timeout)
 
             # Mark we pulled it for JoinableQueues
             if hasattr(dest_q, 'task_done'):

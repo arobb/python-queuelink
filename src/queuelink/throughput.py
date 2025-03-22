@@ -134,7 +134,7 @@ class Throughput_QueueLink(Throughput):
         return self.queue_factory(module=self.dest_module, class_name=self.dest_class)
 
     def get_from_q(self, target_q):
-        return safe_get(queue_proxy=target_q, timeout=self.timeout)
+        return safe_get(queue_obj=target_q, timeout=self.timeout)
 
     def time_to_first_element(self):
         """Measure how long it takes for the first element to be available"""

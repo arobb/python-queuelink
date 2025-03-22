@@ -91,31 +91,45 @@ def new_id():
     return ''.join([random.choice(  # nosec
                '0123456789ABCDEF') for x in range(6)])
 
-def safe_get(queue_proxy, timeout: float=0, stop_event: Union[t_Event, mp_Event]=None):
+def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
+             block: bool = True,
+             timeout: float = 0,
+             stop_event: Union[t_Event, mp_Event] = None,
+             cycle_time: float = 0.005):
     """Queue get implementation that implements partial timeout for all Queue types including
     SimpleQueues.
+
+    CAUTION: Can deadlock if a SimpleQueue is read by multiple consumers.
+
+    :param queue_obj: Any queue object
+    :param block: Block until queue has an element to return (default True)
+    :param timeout: Timeout in seconds; if block is True, raise Empty after this duration
+    :param stop_event: Event to force stop
+    :param cycle_time: Cycle time in seconds of blocking logic for SimpleQueues
 
     :raises queue.Empty
     """
     timer = Timer(interval=timeout)
-    cycle_time = 0.005  # 5ms helps quickly iterate over SimpleQueues
 
     # Handle cycle time with the stop_event if present
-    def wait(time_out=0):
+    def wait(time_out: float=0):
+        """Return False when timeout expires or True if the stop_event is set"""
         if not stop_event:
             time.sleep(time_out)
             return False
-        else:
-            return stop_event.wait(time_out)
+
+        return stop_event.wait(time_out)
 
     try:
-        return queue_proxy.get(timeout=timeout)
+        return queue_obj.get(timeout=timeout)
 
+    # get(block=, timeout=) method signature doesn't exist for SimpleQueues
+    # Alternative implementation to simulate the behavior
     except TypeError:
         while True:
             # Asked to stop, so just stop
             if stop_event and stop_event.is_set():
-                return
+                raise Empty
 
             # Alternate timer
             if timer.interval():
@@ -123,27 +137,36 @@ def safe_get(queue_proxy, timeout: float=0, stop_event: Union[t_Event, mp_Event]
 
             # Check if the queue has a get_nowait method, equivalent to get(block=False)
             # This probably won't be available if get(timeout=) failed, but checking anyway
-            if hasattr(queue_proxy, "get_nowait"):
+            if hasattr(queue_obj, "get_nowait"):
                 try:
-                    return queue_proxy.get_nowait()
+                    return queue_obj.get_nowait()
                 except Empty:
-                    if wait(cycle_time):  # True if stop event was set
-                        return
-                    else:
-                        continue
+                    if not block:
+                        raise Empty
+
+                    elif wait(time_out=cycle_time):  # True if stop event was set
+                        raise Empty
+
+                    continue
 
             # SimpleQueues don't have a get_nowait method/mechanism
             # Try not to get stuck, but can't guarantee that another thread hasn't
             # grabbed one
-            if queue_proxy.empty():
-                if wait(cycle_time):  # True if stop event was set
-                    return
-                else:  # Timeout happened, begin the next while cycle
-                    continue
+            if queue_obj.empty():
+                if not block:
+                    raise Empty
+
+                elif wait(cycle_time):  # True if stop event was set
+                    # Raise empty if the stop_event is set to break out of the loop
+                    raise Empty
+
+                # Timeout happened, begin the next while cycle
+                continue
 
             # SimpleQueue with an item in the queue
             # This can deadlock if there's another reader of this same queue
-            return queue_proxy.get()
+            return queue_obj.get()
 
     finally:
+        queue_obj = None
         stop_event = None

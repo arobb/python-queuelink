@@ -234,7 +234,7 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
 
             # Pull the value
             try:
-                object_out = safe_get(queue_proxy=dest_q, timeout=self.timeout)
+                object_out = safe_get(queue_obj=dest_q, timeout=self.timeout)
                 text_out = object_out[1] if source_q_class == "PriorityQueue" else object_out
 
                 # Mark we pulled it for JoinableQueues

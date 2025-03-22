@@ -4,7 +4,6 @@ Representation of content for a queue where the values may exceed the native
 pipe size.
 """
 import os
-import sys
 import tempfile
 from codecs import getreader
 from enum import Enum, auto
@@ -17,13 +16,23 @@ from .classtemplate import ClassTemplate
 from .timer import Timer
 
 
+def get_len(obj) -> int:
+    """Use a consistent length calculation"""
+    if isinstance(obj, str):
+        subject_byte_count = len(obj.encode('utf8'))
+    else:
+        subject_byte_count = len(to_bytes(obj))
+
+    return subject_byte_count
+
+
 class TYPES(Enum):
     """Enum indicating whether a wrapped item is in memory or a file"""
     DIRECT = 0
     FILE = 1
 
 
-class WRAP_WHEN(Enum):
+class WRAP_WHEN(Enum):  # pylint: disable=invalid-name
     """Enum for deciding when to use ContentWrapper
     Not used directly inside ContentWrapper
 
@@ -60,7 +69,7 @@ class ContentWrapper(ClassTemplate):
         # pylint: disable=no-else-return
         # The 'else' can be hit, so it is not superfluous
         if attr == "value" \
-                and object.__getattribute__(self, "type") == TYPES.FILE:
+                and object.__getattribute__(self, "storage_type") == TYPES.FILE:
             log.debug("Pulling value from buffer file")
             return self._get_value_from_file()
         else:
@@ -71,7 +80,7 @@ class ContentWrapper(ClassTemplate):
         """When necessary, save the 'value' to a buffer file"""
         if attr == "value":
             # Within the threshold size limit or not forced to use a file
-            if len(to_bytes(val)) < self.THRESHOLD and not self._is_explicit_file():
+            if get_len(val) < self.threshold and not self._is_explicit_file():
                 self._log.debug("Storing value to memory")
                 object.__setattr__(self, attr, val)
 
@@ -86,7 +95,7 @@ class ContentWrapper(ClassTemplate):
                     del self.value
 
                 # Set the type
-                object.__setattr__(self, "type", TYPES.FILE)
+                object.__setattr__(self, "storage_type", TYPES.FILE)
 
                 # pylint: disable=consider-using-with
                 # We explicitly do not want to close the tempfile automatically
@@ -153,46 +162,44 @@ class ContentWrapper(ClassTemplate):
         return len(self.value)
 
     def __repr__(self):
-        return "{}('{}')".format(self.__class__.__name__, self.value)
+        return f"{self.__class__.__name__}('{self.value}')"
 
     def __str__(self):
         if isinstance(self.value, str):
             return self.value
 
-        elif isinstance(self.value, bytes):
+        if isinstance(self.value, bytes):
             return self.value.decode('utf8')
 
-        else:
-            return str(self.value)
+        return str(self.value)
 
     def __bytes__(self):
         if isinstance(self.value, str):
             return self.value.encode('utf8')
 
-        elif isinstance(self.value, bytes):
+        if isinstance(self.value, bytes):
             return self.value
 
-        else:
-            bytes(self.value)
+        return bytes(self.value)
 
     def __eq__(self, other):
         return self.value == other
 
-    def __init__(self, val, threshold: int=None, type: TYPES=None):
+    def __init__(self, val, threshold: int = None, storage_type: TYPES = None):
         self._log = None
         self._initialize_logging(__name__)
 
-        self.THRESHOLD = self.THRESHOLD if threshold is None else threshold
+        self.threshold = self.THRESHOLD if threshold is None else threshold
 
         # Set the type
-        if type:
-            if isinstance(type, TYPES):
-                self.type = type
+        if storage_type:
+            if isinstance(storage_type, TYPES):
+                self.storage_type = storage_type
                 self.type_explicit = True
             else:
-                raise (TypeError, f'Given type "{type}" is not from TYPES')
+                raise TypeError(f'Given type "{storage_type}" is not from TYPES')
         else:
-            self.type = TYPES.DIRECT
+            self.storage_type = TYPES.DIRECT
             self.type_explicit = False
 
         # Used only if this is stored in a file
@@ -207,7 +214,7 @@ class ContentWrapper(ClassTemplate):
         pass
 
     def _is_explicit_file(self):
-        if self.type_explicit and self.type == TYPES.FILE:
+        if self.type_explicit and self.storage_type == TYPES.FILE:
             return True
 
         return False

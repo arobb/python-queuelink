@@ -7,39 +7,46 @@ import unittest
 
 from pickle import PickleError, UnpicklingError
 from kitchen.text.converters import to_bytes
-from queuelink.contentwrapper import ContentWrapper
+from queuelink.contentwrapper import ContentWrapper, get_len
 from queuelink.contentwrapper import TYPES
 
 '''
 '''
 class QueueLinkContentWrapperTestCase(unittest.TestCase):
     def setUp(self):
-        def ofBytesLength(subject, length):
+        def of_bytes_length(subject, length, round_func_name='floor'):
             """
             Calculates the length of a string in bytes, then generates a longer string that comes in at
             or under "length"
             """
-            subjectByteCount = len(to_bytes(subject))
+            subject_byte_count = get_len(subject)
 
             # If the length is less than the byte count of the subject (say length 2 but the byte count is 4)
             # return the subject unmodified
-            if length < subjectByteCount:
+            if length < subject_byte_count:
                 return subject
 
-            subjectArray = [subject] * int(math.floor(int(length) / subjectByteCount))
-            return "".join(subjectArray)
+            # Rounding function
+            round_func = getattr(math, round_func_name)
 
-        self.contentUnderThreshold = ofBytesLength("😂", (ContentWrapper.THRESHOLD - 1))
-        self.contentOverThreshold = ofBytesLength("😂", ContentWrapper.THRESHOLD)
-        self.content1m   = ofBytesLength("😂", 2**20)  #  1,048,576
-        self.content8m   = ofBytesLength("😂", 2**23)  #  8,388,608
-        self.content16m  = ofBytesLength("😂", 2**24)  # 16,777,216
+            # subject_byte_count = 4
+            # length = 22
+            # math.floor(int(length=22) / subject_byte_count=4) = math.floor(5.5) = 5
+            # joined length = 20
+            subject_array = [subject] * int(round_func(int(length) / subject_byte_count))
+            return "".join(subject_array)
+
+        self.contentUnderThreshold = of_bytes_length("😂", (ContentWrapper.THRESHOLD - 1))
+        self.contentOverThreshold = of_bytes_length("😂", ContentWrapper.THRESHOLD + 1, round_func_name='ceil')
+        self.content1m   = of_bytes_length("😂", 2**20)  #  1,048,576
+        self.content8m   = of_bytes_length("😂", 2**23)  #  8,388,608
+        self.content16m  = of_bytes_length("😂", 2**24)  # 16,777,216
 
     def test_queuelink_contentwrapper_explicit_file(self):
         content = self.contentUnderThreshold
-        cw = ContentWrapper(content, type=TYPES.FILE)
+        cw = ContentWrapper(content, storage_type=TYPES.FILE)
         expectedType = TYPES.FILE
-        actualType = cw.type
+        actualType = cw.storage_type
 
         self.assertEqual(expectedType,
                          actualType,
@@ -60,17 +67,19 @@ class QueueLinkContentWrapperTestCase(unittest.TestCase):
 
         self.assertEqual(len(content),
                          len(cw),
-                         "ContentWrapper is not returning the right length: original {}, returned {}".format(len(content), len(cw)))
+                         f"ContentWrapper is not returning the right length: "
+                         f"original {get_len(content)}, returned {get_len(cw.value)}")
 
     def test_queuelink_contentwrapper_type_under_threshold(self):
         content = self.contentUnderThreshold
         cw = ContentWrapper(content)
-        expectedType = "DIRECT"
-        actualType = TYPES(cw.type).name
+        expected_type = "DIRECT"
+        actual_type = TYPES(cw.storage_type).name
 
-        self.assertEqual(expectedType,
-                         actualType,
-                         "ContentWrapper type isn't what is expected: expected {}, actual {}".format(expectedType, actualType))
+        self.assertEqual(expected_type,
+                         actual_type,
+                         f"ContentWrapper type isn't what is expected: expected {expected_type} "
+                         f"(limit ({ContentWrapper.THRESHOLD}), actual {actual_type} (len {len(content)})")
 
     def test_queuelink_contentwrapper_double_read_under_threshold(self):
         content = self.contentUnderThreshold
@@ -103,12 +112,13 @@ class QueueLinkContentWrapperTestCase(unittest.TestCase):
     def test_queuelink_contentwrapper_type_over_threshold(self):
         content = self.contentOverThreshold
         cw = ContentWrapper(content)
-        expectedType = "FILE"
-        actualType = TYPES(cw.type).name
+        expected_type = "FILE"
+        actual_type = TYPES(cw.storage_type).name
 
-        self.assertEqual(expectedType,
-                         actualType,
-                         "ContentWrapper type isn't what is expected: expected {}, actual {}".format(expectedType, actualType))
+        self.assertEqual(expected_type,
+                         actual_type,
+                         f"ContentWrapper type isn't what is expected: expected {expected_type} "
+                         f"(limit {cw.threshold}), actual {actual_type} (len {get_len(content)})")
 
     def test_queuelink_contentwrapper_value_empty_over_threshold(self):
         content = self.contentOverThreshold

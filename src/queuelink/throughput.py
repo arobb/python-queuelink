@@ -272,7 +272,8 @@ class Throughput_QueueLink(Throughput):
 
             while True:
                 try:
-                    self.log.debug('Elements in per second increase with source %s and destination %s: %i',
+                    self.log.debug('Elements in per second increase with source %s and '
+                                   'destination %s: %i',
                                    self.source_path, self.dest_path, element_count)
                     eps = elements_per_second(element_count=element_count, src_q=src_q, dst_q=dst_q)
                     return eps
@@ -294,6 +295,8 @@ class Throughput_QueueLink(Throughput):
                          result=str(actual_eps),
                          result_unit='elements_per_second')
 
-        self.log.info('Elements per second with baseline (added/removed from one queue) on %s: %i, '
-                      'and actual (two queues connected by a QueueLink) based on source %s and destination %s: %i',
-                      self.source_path, baseline_eps, self.source_path, self.dest_path, actual_eps)
+        self.log.info('Elements per second with baseline (added/removed from one queue) '
+                      'on %s: %i, and actual (two queues connected by a QueueLink) based on '
+                      'source %s and destination %s: %i',
+                      self.source_path, baseline_eps, self.source_path,
+                      self.dest_path, actual_eps)

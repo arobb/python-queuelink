@@ -379,8 +379,8 @@ class QueueLink(ClassTemplate):
         # SimpleQueues
         if direction == DIRECTION.FROM and isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
             self._log.warning('Using multiple readers on a SimpleQueue that is a source for a '
-                              'QueueLink instance (including other QueueLink instances) can cause a '
-                              'deadlock. Queue type: %s.', type(queue_proxy))
+                              'QueueLink instance (including other QueueLink instances) can cause '
+                              'a deadlock. Queue type: %s.', type(queue_proxy))
 
         with self.queues_lock:
             # Get the queue list and opposite queue list
@@ -690,7 +690,8 @@ class QueueLink(ClassTemplate):
             for q_id in list(queue_list):
                 try:
                     target_queue = self.get_queue(q_id)
-                    self._log.info("queue_id %s: %s", text(q_id), safe_get(target_queue, block=False))
+                    self._log.info("queue_id %s: %s",
+                                   text(q_id), safe_get(target_queue, block=False))
                 except Empty:
                     self._log.info("queue_id %s is empty", text(q_id))
 

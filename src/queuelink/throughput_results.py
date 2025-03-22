@@ -118,15 +118,17 @@ class ThroughputResultsOutput():
             session_id = self.get_latest_session_id()
 
         # Columns
-        columns = ['python_version', 'test_name', 'start_method',
-                   'source', 'destination', 'CAST(ROUND(AVG(result), 6) AS TEXT) as result_avg', 'result_unit']
+        columns = ['python_version', 'test_name', 'start_method', 'source', 'destination',
+                   'CAST(ROUND(AVG(result), 6) AS TEXT) as result_avg', 'result_unit']
 
         # Records
         sql = (f'SELECT {",".join(columns)} '
                f'FROM {result_table_name} '
                f'WHERE session_id = "{session_id}" '
-               f'GROUP BY python_version, test_name, start_method, source, destination, result_unit '
-               f'ORDER BY python_version DESC, test_name ASC, start_method ASC, source ASC, destination ASC')
+               f'GROUP BY python_version, test_name, start_method, source, destination, '
+               f'  result_unit '
+               f'ORDER BY python_version DESC, test_name ASC, start_method ASC, source ASC, '
+               f'  destination ASC')
         cursor = self.db.cursor()
         results = cursor.execute(sql).fetchall()
 

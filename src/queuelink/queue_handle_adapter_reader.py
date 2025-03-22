@@ -7,10 +7,8 @@ import codecs
 import logging
 import multiprocessing  # For comparisons
 
-from _io import _IOBase  # For comparisons
-
 from .contentwrapper import ContentWrapper
-from .contentwrapper import TYPES, WRAP_WHEN
+from .contentwrapper import WRAP_WHEN
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
 from .common import UNION_SUPPORTED_QUEUES, DIRECTION
 
@@ -41,7 +39,7 @@ def connection_readline(self):
 
         except OSError as e:
             # Bad file descriptor / handle is closed
-            if e.errno == 9:
+            if e.errno == 9 or str(e).lower() == 'handle is closed':
                 return
 
             # Some other OS error
@@ -61,7 +59,7 @@ def add_methods_to_connections(conn, trusted):
 # by using ContentWrapper to buffer large lines to disk when wrap_when is always or auto
 class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     """Custom manager to capture the output of processes and store them in
-    one more more dedicated thread-safe or process-safe queues.
+    one more dedicated thread-safe or process-safe queues.
     """
 
     def __init__(self,
@@ -96,10 +94,6 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             original_handle = handle
             handle = codecs.getreader('utf-8')(original_handle)
 
-        # If its a BufferedReader we have to stay in the same process
-        if isinstance(handle, _IOBase):
-            thread_only = True
-
         # Initialize the parent class
         # pylint: disable=bad-super-call
         # Py3 supports super().__init__; this form is kept for backward compat
@@ -120,6 +114,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                              queue,
                              queue_lock,
                              stop_event,
+                             messages_processed,
                              trusted,
                              wrap_when):
         """Copy lines from a given pipe handle into a local threading.Queue
@@ -185,22 +180,26 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                     queue.put(content)
                     log.debug('Sent to queue')
 
+                # Increment counter
+                if isinstance(messages_processed, int):
+                    messages_processed += 1
+                else:
+                    # Only one reader per instance, so this can be incremented
+                    # safely without a lock
+                    messages_processed.value += 1
+
                 # Check whether we should stop now
                 if stop_event.is_set():
                     log.info('Asked to stop')
                     break
-
-            log.info('Closing pipe handle')
-            try:
-                handle.close()
-            except OSError as e:
-                if e.errno != 9:  # OSError: [Errno 9] Bad file descriptor
-                    raise e
 
             # Clean up references
             # Prevent "UserWarning: ResourceTracker called reentrantly for resource cleanup,
             # which is unsupported. The semaphore object '/<name>' might leak."
             queue_lock = None
             stop_event = None
+            messages_processed = None
+            handle.stop_event = None
+            handle = None
 
         log.info('Sub-process complete')

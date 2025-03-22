@@ -16,6 +16,7 @@ from queuelink.contentwrapper import ContentWrapper
 from queuelink.contentwrapper import WRAP_WHEN
 from queuelink.writeout import writeout
 from queuelink.queue_handle_adapter_reader import QueueHandleAdapterReader
+from queuelink.queue_handle_adapter_writer import QueueHandleAdapterWriter
 
 try:
     packages = packages_distributions()

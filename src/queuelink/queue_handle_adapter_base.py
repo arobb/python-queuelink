@@ -3,7 +3,9 @@
 from __future__ import unicode_literals
 
 import random
-import sys
+import tempfile  # For comparisons
+
+from _io import _IOBase  # For comparisons
 
 from threading import Thread  # For non-multi-processing queues
 
@@ -12,8 +14,7 @@ import multiprocessing
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
-from .contentwrapper import WRAP_WHEN
-from .common import UNION_SUPPORTED_QUEUES, DIRECTION
+from .common import DIRECTION
 from .common import is_threaded
 
 
@@ -27,8 +28,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
                  log_name:str =None,
                  start_method: str=None,
                  thread_only: bool=False,
-                 trusted: bool=False,
-                 wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER):
+                 **kwargs):
         """QueuePipeAdapter abstract implementation
 
         Args:
@@ -66,12 +66,6 @@ class _QueueHandleAdapterBase(ClassTemplate):
         # Whether to use only threading (vs multiprocessing)
         self.thread_only = thread_only
 
-        # Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes
-        self.trusted = trusted
-
-        # When to use a ContentWrapper
-        self.wrap_when = wrap_when
-
         # Which multiprocess context to use
         self.multiprocessing_ctx = multiprocessing.get_context(start_method)
 
@@ -90,6 +84,13 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Lock to notify readers/writers that a read/write is in progress
         self.queue_lock = self.multiprocessing_ctx.Lock()
+
+        # Store the number of messages processed
+        # Q unsigned long long https://docs.python.org/3/library/array.html#module-array
+        self.messages_processed = 0 if thread_only else multiprocessing.Value('Q')
+
+        # Store other args
+        self.kwargs = kwargs
 
         self.process = None
         self.handle = None
@@ -122,26 +123,36 @@ class _QueueHandleAdapterBase(ClassTemplate):
         self.handle = handle
 
         # Process name
-        process_name = "{}-{}".format(self.subclass_name, self.name)
+        process_name = f'{self.subclass_name}-{self.name}'
 
         if self.log_name is not None:
-            process_name = "{}-{}".format(process_name, self.log_name)
+            process_name = f'{process_name}-{self.log_name}'
+
+        # If the handle is a BufferedReader we have to stay in the same process
+        if isinstance(handle, (_IOBase, tempfile._TemporaryFileWrapper)) and not self.thread_only:
+            self._log.warning(f'Adapter process {process_name} will only be threaded as we cannot'
+                              f'send an open handle to another process.')
+            self.thread_only = True
 
         # Select the right concurrency mechanism
         threaded = is_threaded(self.queue)
         Parallel = Thread if threaded or self.thread_only else self.multiprocessing_ctx.Process
 
+        # Arguments for
+        arg_dict = {
+            "name": self.name,
+            "handle": handle,
+            "queue": self.queue,
+            "queue_lock": self.queue_lock,
+            "stop_event": self.stop_event,
+            "messages_processed": self.messages_processed}
+        arg_dict.update(self.kwargs)
+
         self._log.debug("Setting %s adapter process for %s pipe handle",
                         self.subclass_name, self.name)
         self.process = Parallel(target=self.queue_handle_adapter,
                                 name=process_name,
-                                kwargs={"name": self.name,
-                                        "handle": handle,
-                                        "queue": self.queue,
-                                        "queue_lock": self.queue_lock,
-                                        "stop_event": self.stop_event,
-                                        "trusted": self.trusted,
-                                        "wrap_when": self.wrap_when})
+                                kwargs=arg_dict)
         self.process.daemon = True
         self.process.start()
         self.started.set()
@@ -156,19 +167,11 @@ class _QueueHandleAdapterBase(ClassTemplate):
                              handle,
                              queue,
                              queue_lock,
-                             stop_event):
+                             stop_event,
+                             messages_processed,
+                             trusted,
+                             **kwargs):
         """Override me in a subclass to do something useful"""
-
-    def get_queue(self, client_id):
-        """Retrieve a client's Queue proxy object
-
-        Args:
-            client_id (string): ID of the client
-
-        Returns:
-            multiprocessing.JoinableQueue:
-        """
-        return self.queue_link.get_queue(client_id)
 
     def _stop(self):
         """Internal stop method"""
@@ -182,7 +185,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
             self.process.join(timeout=1)
 
             if self.process.is_alive():
-                self._log.info("Waiting for adapter to stop")
+                # self._log.info("Waiting for adapter to stop")
+                pass
             else:
                 break
 
@@ -195,12 +199,18 @@ class _QueueHandleAdapterBase(ClassTemplate):
             self._stop()
 
         # Delete/unlink other resources
-        self.started = None
-        self.stopped = None
-        self.stop_event = None
-        self.queue_lock = None
-        self.queue = None
-        self.handle = None
+        attributes = [
+            'started',
+            'stopped',
+            'stop_event',
+            'queue_lock',
+            'queue',
+            'handle',
+            'messages_processed']
+
+        for attr in attributes:
+            if hasattr(self, attr):
+                setattr(self, attr, None)
 
     def is_empty(self, client_id=None):
         """Checks whether the primary Queue or any clients' Queues are empty
@@ -269,3 +279,9 @@ class _QueueHandleAdapterBase(ClassTemplate):
         # running self.queue_link.is_drained()
 
         return drained
+
+    def get_messages_processed(self):
+        if isinstance(self.messages_processed, int):
+            return self.messages_processed
+
+        return self.messages_processed.value

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import codecs
 import itertools
 import logging
 import multiprocessing
@@ -105,11 +104,13 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                 dest_q.task_done()
 
         except Empty:
-            link_alive = read_adapter.is_alive()
-
-            raise Empty('Destination queue is empty because the publisher process '
-                        f'has died for {self.queue_class_path}, '
-                        f'and start method {self.start_method}.')
+            if read_adapter.is_alive():
+                raise Empty('Destination queue is empty because the publisher process '
+                            f'has died for {self.queue_class_path}, '
+                            f'and start method {self.start_method}.')
+            else:
+                raise Empty(f'Timeout reading destination queue for {self.queue_class_path}, '
+                            f'and start method {self.start_method}.')
 
         finally:
             read_adapter.close()
@@ -124,6 +125,7 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         # Text in
         faces = '😂' * text_len
         text_in = faces if text_len == 1 else f'a{faces[:-1]}'  # include leading 'a'
+        wrapper = None
 
         # Subprocess
         c1, c2 = multiprocessing.Pipe()
@@ -153,17 +155,21 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                 dest_q.task_done()
 
         except Empty:
-            link_alive = read_adapter.is_alive()
-
-            raise Empty('Destination queue is empty because the publisher process '
-                        f'has died for {self.queue_class_path}, start method {self.start_method}, '
-                        f'and {"trusted" if trusted else "untrusted"} Connections.')
+            if not read_adapter.is_alive():
+                raise Empty('Destination queue is empty because the publisher process '
+                            f'has died for {self.queue_class_path}, start method {self.start_method}, '
+                            f'and {"trusted" if trusted else "untrusted"} Connections.')
+            else:
+                raise Empty(f'Timeout reading destination queue for {self.queue_class_path}, start method '
+                            f'{self.start_method} and {"trusted" if trusted else "untrusted"} Connections.')
 
         finally:
-            for conn in [c1, c1]:
+            read_adapter.close()
+            del dest_q
+
+            for conn in [c1, c2]:
                 try:
-                    c1.close()
-                    c2.close()
+                    conn.close()
 
                 except OSError as e:
                     # Bad file descriptor / handle is closed

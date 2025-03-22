@@ -35,7 +35,7 @@ class ClassTemplate(object):
             return
 
         # Logger name
-        log_name = "{}-{}".format(class_name, self.id)
+        log_name = f'{class_name}-{self.id}'
 
         # Logging
         self._log = logging.getLogger(log_name)
@@ -54,13 +54,13 @@ class ClassTemplate(object):
             return
 
         # Logger name
-        log_name = "{}-{}".format(class_name, self.id)
+        log_name = f'{class_name}-{self.id}'
 
         if getattr(self, 'log_name', None) is not None:
-            log_name = "{}.{}".format(log_name, self.log_name)
+            log_name = f'{log_name}.{self.log_name}'
 
         if getattr(self, 'name', None) is not None:
-            log_name = "{}.{}".format(log_name, self.name)
+            log_name = f'{log_name}.{self.name}'
 
         # Logging
         self._log = logging.getLogger(log_name)

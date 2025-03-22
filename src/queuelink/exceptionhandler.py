@@ -90,9 +90,7 @@ class ExceptionHandler(Exception):
         self.errmsg += "\n"
         log.error(self.errmsg)
 
-        errargmsg = "{0} {1} arguments:\n{2!r}".format(self.err_type,
-                                                       type(error).__name__,
-                                                       error.args)
+        errargmsg = f"{self.err_type} {type(error).__name__} arguments:\n{error.args:2!r}"
         errargmsg += "\n"
         log.error(errargmsg)
 

@@ -270,11 +270,9 @@ class QueueLink(ClassTemplate):
         """
         # Make a helpful logger name
         if name is None:
-            logger_name = "{}.publisher.{}".format(__name__, source_id)
+            logger_name = f'{__name__}.publisher.{source_id}'
         else:
-            logger_name = "{}.publisher.{}.{}".format(__name__
-                                                      , name
-                                                      , source_id)
+            logger_name = f'{__name__}.publisher.{name}.{source_id}'
 
         log = logging.getLogger(logger_name)
         log.addHandler(logging.NullHandler())
@@ -381,8 +379,8 @@ class QueueLink(ClassTemplate):
         # SimpleQueues
         if direction == DIRECTION.FROM and isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
             self._log.warning('Using multiple readers on a SimpleQueue that is a source for a '
-                           'QueueLink instance (including other QueueLink instances) can cause a '
-                           f'deadlock. Queue type: {type(queue_proxy)}.')
+                              'QueueLink instance (including other QueueLink instances) can cause a '
+                              'deadlock. Queue type: %s.', type(queue_proxy))
 
         with self.queues_lock:
             # Get the queue list and opposite queue list
@@ -395,9 +393,9 @@ class QueueLink(ClassTemplate):
                 raise ValueError("Cannot add this queue again")
 
             if queue_proxy in op_queue_dict.values():
-                raise ValueError("This queue is in the opposite list. Cannot"
-                                 " add to the {} list because it would cause"
-                                 " a circular reference.".format(direction))
+                raise ValueError('This queue is in the opposite list. Cannot'
+                                 f' add to the {direction} list because it would cause'
+                                 ' a circular reference.')
 
             # Increment the current queue_id
             queue_id = self.last_queue_id + 1
@@ -495,10 +493,9 @@ class QueueLink(ClassTemplate):
 
         # Name the process
         if self.log_name is not None:
-            process_name = "ClientPublisher-{}-{}".format(self.log_name,
-                                                          source_id)
+            process_name = f'ClientPublisher-{self.log_name}-{source_id}'
         else:
-            process_name = "ClientPublisher-{}".format(source_id)
+            process_name = f'ClientPublisher-{source_id}'
 
         # Determine whether to use a thread or process based publisher
         threaded = is_threaded([source_queue, *dest_queues_dict.values()])
@@ -571,8 +568,7 @@ class QueueLink(ClassTemplate):
 
         """
         with self.queues_lock:
-            queue_list = getattr(self,
-                                 "client_queues_{}".format(direction))
+            queue_list = getattr(self, f'client_queues_{direction}')
             if text(queue_id) in queue_list:
                 queue_list.pop(queue_id)
 
@@ -617,8 +613,7 @@ class QueueLink(ClassTemplate):
                 # If this is a downstream queue, we need to make sure all
                 # upstream queues are empty, too
                 if queue_id in self.client_queues_destination.keys():
-                    self._log.debug("First checking upstream queue(s) of %s",
-                                    queue_id)
+                    self._log.debug("First checking upstream queue(s) of %s", queue_id)
 
                     for source_id in self.client_queues_source:
                         source_empty = self.get_queue(source_id).empty()
@@ -651,7 +646,7 @@ class QueueLink(ClassTemplate):
         alive = True
 
         if not self.started.is_set():
-            raise ProcessNotStarted("{} has not started".format(self.name))
+            raise ProcessNotStarted(f'{self.name} has not started')
 
         for proc in self.client_pair_publishers.values():
             alive = alive and proc.is_alive()
@@ -702,14 +697,12 @@ class QueueLink(ClassTemplate):
                 return queue_proxy.get()
 
         with self.queues_lock:
-            queue_list = getattr(self,
-                                 "client_queues_{}".format(direction))
+            queue_list = getattr(self, f'client_queues_{direction}')
 
             for q_id in list(queue_list):
                 try:
                     target_queue = self.get_queue(q_id)
-                    self._log.info("queue_id %s: %s",
-                                   text(q_id), get_nowait(target_queue))
+                    self._log.info("queue_id %s: %s", text(q_id), safe_get(target_queue, block=False))
                 except Empty:
                     self._log.info("queue_id %s is empty", text(q_id))
 

@@ -159,8 +159,8 @@ class Throughput_QueueLink(Throughput):
                          result=str(timing),
                          result_unit='seconds')
 
-        self.log.info(f'Time to first element for source {self.source_path} and destination '
-                      f'{self.dest_path}, start method {self.start_method}: {timing}')
+        self.log.info('Time to first element for source %s and destination %s, start method %s: %s',
+                      self.source_path, self.dest_path, self.start_method, timing)
 
     def avg_time_per_element_after_first_queuelink(self):
         """Measure the nominal latency"""
@@ -205,9 +205,9 @@ class Throughput_QueueLink(Throughput):
                          result=results['stddev'],
                          result_unit='seconds')
 
-        self.log.info(f'Results for time per element across {iterations} elements with source '
-                      f'{self.source_path} and destination {self.dest_path}, start method '
-                      f'{self.start_method}: {results}')
+        self.log.info('Results for time per element across %s elements with source '
+                      '%s and destination %s, start method %s: %s',
+                      iterations, self.source_path, self.dest_path, self.start_method, results)
 
     def elements_per_second_queuelink(self):
         """Measure the number of elements per second"""
@@ -255,8 +255,9 @@ class Throughput_QueueLink(Throughput):
 
             # Check if the test ended in less than 1 second
             if end - start < 1:
-                self.log.debug(f'Elements/second test for source {self.source_path} and destination '
-                               f'{self.dest_path} ended with {element_count} in {end - start}s')
+                self.log.debug('Elements/second test for source %s and destination '
+                               '%s ended with %i in %f s',
+                               self.source_path, self.dest_path, element_count, end - start)
                 raise ValueError
 
             # Find which item index crossed the 1 second mark
@@ -271,8 +272,8 @@ class Throughput_QueueLink(Throughput):
 
             while True:
                 try:
-                    self.log.debug(f'Elements in per second increase with source {self.source_path}'
-                                   f'and destination {self.dest_path}: {element_count}')
+                    self.log.debug('Elements in per second increase with source %s and destination %s: %i',
+                                   self.source_path, self.dest_path, element_count)
                     eps = elements_per_second(element_count=element_count, src_q=src_q, dst_q=dst_q)
                     return eps
 
@@ -293,7 +294,6 @@ class Throughput_QueueLink(Throughput):
                          result=str(actual_eps),
                          result_unit='elements_per_second')
 
-        self.log.info(f'Elements per second with baseline (added/removed from one queue) on '
-                      f'{self.source_path}: {baseline_eps}, and actual (two queues connected by '
-                      f'a QueueLink) based on source {self.source_path} and destination '
-                      f'{self.dest_path}: {actual_eps}')
+        self.log.info('Elements per second with baseline (added/removed from one queue) on %s: %i, '
+                      'and actual (two queues connected by a QueueLink) based on source %s and destination %s: %i',
+                      self.source_path, baseline_eps, self.source_path, self.dest_path, actual_eps)

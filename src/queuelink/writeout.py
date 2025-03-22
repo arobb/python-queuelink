@@ -22,7 +22,7 @@ def writeout(pipe, output_prefix):
 
     def func(line):
         pipe_writer = getwriter("utf-8")(pipe)
-        output = "{}{}".format(output_prefix, line)
+        output = f'{output_prefix}{line}'
 
         try:
             pipe_writer.write(output)
@@ -34,12 +34,10 @@ def writeout(pipe, output_prefix):
             except TypeError:
                 pipe.write(str(output))
             except Exception as exc:
-                raise ExceptionHandler(exc, "Crazy pipe writer stuff: {}"
-                                       .format(exc))
+                raise ExceptionHandler(exc, f'Crazy pipe writer stuff: {exc}')
 
         except ValueError as exc:
-            raise ExceptionHandler(exc,
-                                   "writeout caught odd error: {}".format(exc))
+            raise ExceptionHandler(exc, f'writeout caught odd error: {exc}')
 
         finally:
             pipe_writer.flush()

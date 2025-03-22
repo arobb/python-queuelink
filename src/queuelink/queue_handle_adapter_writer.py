@@ -72,7 +72,7 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             queue_lock (Lock): Lock used to indicate a write in progress
             stop_event (Event): Used to determine whether to stop the process
         """
-        logger_name = "{}.queue_handle_adapter.{}".format(__name__, name)
+        logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)
         log.addHandler(logging.NullHandler())
 
@@ -111,7 +111,7 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                                 handle_ready = True
 
                         # Write content into the file
-                        log.info(f'Writing line to {name}')
+                        log.info('Writing line to %s', name)
                         handle.write(content)
 
                     # Increment counter

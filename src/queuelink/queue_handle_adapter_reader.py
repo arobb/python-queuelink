@@ -150,7 +150,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             handle.stop_event = stop_event
 
         log.info('Starting reader process')
-        log.info(f'Queue type: {type(queue)}')
+        log.info('Queue type: %s', type(queue))
         if handle.closed:
             log.warning('Pipe handle is already closed')
 

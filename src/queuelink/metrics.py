@@ -79,7 +79,7 @@ class TimedMetric(BaseMetric):
         """Provide new values to this method. Do not increment data_points separately."""
         if len(self.data_points) == self.max_points:
             removed = self.data_points.pop(0)
-            self._log.debug(f'Max value count reached, removed oldest data point "{removed}"')
+            self._log.debug('Max value count reached, removed oldest data point "%s"', removed)
 
         self.data_points.append(new_value)
         self._update_mean(new_value)
@@ -130,7 +130,7 @@ class Metrics(ClassTemplate):
         element_id = self.new_id()
         while element_id in self.elements.keys():
             element_id = self.new_id()
-            self._log.warning(f'Element ID: {element_id}')
+            self._log.warning('Element ID: %s', str(element_id))
 
         if type == 'timing':
             m = TimedMetric(name=name)

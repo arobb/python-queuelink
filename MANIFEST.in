@@ -1,5 +1,6 @@
 prune tests
 prune coverage
+prune throughput
 global-exclude *.pyc __pycache__
 global-exclude .gitignore
 exclude *.sh

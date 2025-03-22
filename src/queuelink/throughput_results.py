@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from typing import Union
 
-db_name = 'throughput.sqlite.db'
+db_name = 'throughput/throughput.sqlite.db'
 
 current_session_table_name = 'current_session'
 current_session_table_schema = 'parent_process_id, session_id, session_time, ' \
@@ -102,9 +102,54 @@ class ThroughputResults(object):
 class ThroughputResultsOutput():
     def __init__(self):
         self.db = sqlite3.connect(db_name)
+        self.db.row_factory = sqlite3.Row  # Set the kind of result objects that get returned
 
-    def get_session_results(self, session_id):
-        sql = f'SELECT * FROM {result_table_name} WHERE session_id = "{session_id}"'
+    def get_latest_session_id(self):
+        """Get the session ID of the latest throughput session"""
+        sql = f'SELECT session_id FROM {test_session_table_name} ORDER BY time DESC LIMIT 1'
         cursor = self.db.cursor()
-        results = cursor.execute(sql)
-        return results.fetchall()
+        results = cursor.execute(sql).fetchone()
+
+        return results['session_id'] if len(results) > 0 else None
+
+    def get_session_results(self, session_id: str=None):
+        """Get results of the specified (or latest) session"""
+        if session_id is None:
+            session_id = self.get_latest_session_id()
+
+        # Columns
+        columns = ['python_version', 'test_name', 'start_method',
+                   'source', 'destination', 'CAST(ROUND(AVG(result), 6) AS TEXT) as result_avg', 'result_unit']
+
+        # Records
+        sql = (f'SELECT {",".join(columns)} '
+               f'FROM {result_table_name} '
+               f'WHERE session_id = "{session_id}" '
+               f'GROUP BY python_version, test_name, start_method, source, destination, result_unit '
+               f'ORDER BY python_version DESC, test_name ASC, start_method ASC, source ASC, destination ASC')
+        cursor = self.db.cursor()
+        results = cursor.execute(sql).fetchall()
+
+        # Add the column names as the first row
+        if len(results) > 0:
+            results.insert(0, results[0].keys())
+
+        return results
+
+
+if __name__ == "__main__":
+    # Print the latest set of results
+    results_object = ThroughputResultsOutput()
+    results_list = results_object.get_session_results()
+
+    print(f'Total rows: {len(results_list)-1}')
+
+    # Column widths
+    # https://sqlpey.com/python/top-5-methods-to-create-nicely-formatted-column-outputs-in-python/
+    widths = [max(map(len, col))+2 for col in zip(*results_list)]
+
+    # Print rows
+    for i, row in enumerate(results_list):
+        # if i > 20:
+        #     break
+        print(" ".join(val.ljust(width) for val, width in zip(row, widths)))

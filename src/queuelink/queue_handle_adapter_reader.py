@@ -70,7 +70,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                  start_method: str=None,
                  thread_only: bool=None,
                  trusted: bool=False,
-                 wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER):
+                 wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER,
+                 wrap_threshold: int=None):
         """
         Read lines of text from a handle or pipe and write (line by line) into a queue.
 
@@ -84,6 +85,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         :param thread_only: Force the adapter to use a thread rather than process
         :param trusted: Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
         :param wrap_when: When to use a ContentWrapper to encapsulate records
+        :param wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper; only applies when wrap_when is WRAP_WHEN.AUTO
         """
         # A multiprocessing.Pipe (Connection) does not have a readline method
         # This checks the type. If not a Connection instance, it returns unchanged
@@ -106,7 +108,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                                          start_method=start_method,
                                          thread_only=thread_only,
                                          trusted=trusted,
-                                         wrap_when=wrap_when)
+                                         wrap_when=wrap_when,
+                                         wrap_threshold=wrap_threshold)
 
     @staticmethod
     def queue_handle_adapter(name,
@@ -116,7 +119,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                              stop_event,
                              messages_processed,
                              trusted,
-                             wrap_when):
+                             wrap_when,
+                             wrap_threshold):
         """Copy lines from a given pipe handle into a local threading.Queue
 
         Runs in a separate process, started by __init__. Closes pipe when done
@@ -137,6 +141,9 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
 
         # Add readline and flush again; needed for spawn and forkserver start_methods
         handle = add_methods_to_connections(conn=handle, trusted=trusted)
+
+        # Calculate the threshold to use
+        wrap_threshold = ContentWrapper.THRESHOLD if wrap_threshold is None else wrap_threshold
 
         # If its a Connection attach the stop_event so our readline can stop
         if isinstance(handle, multiprocessing.connection.Connection):
@@ -165,7 +172,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                     content = ContentWrapper(line)
 
                 elif wrap_when == WRAP_WHEN.AUTO \
-                        and len(line) > ContentWrapper.THRESHOLD:
+                        and len(line) > wrap_threshold:
                     content = ContentWrapper(line)
 
                 else:

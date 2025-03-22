@@ -1,7 +1,7 @@
 [project]
 name = "queuelink"
 version = "2.0.0"
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "optional-dependencies"]
 description = "Connect and link one or more Queues together or to files"
 readme = "README.rst"
 authors = [{ name = "Andy Robb", email = "andy@andyrobb.com" }]
@@ -20,8 +20,8 @@ repository = "https://github.com/arobb/python-queuelink"
 
 [build-system]
 requires = [
-    "setuptools >= 45 ; python_version >= '3'",
-    "setuptools_scm[toml] >= 6.2 ; python_version >= '3'",
+    "setuptools >= 45 ; python_version >= '3.9'",
+    "setuptools_scm[toml] >= 6.2 ; python_version >= '3.9'",
     "wheel >= 0.29.0",
 ]
 build-backend = 'setuptools.build_meta'

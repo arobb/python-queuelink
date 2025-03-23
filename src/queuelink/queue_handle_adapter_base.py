@@ -7,7 +7,7 @@ import tempfile  # For comparisons
 import threading
 
 from threading import Thread  # For non-multi-processing queues
-from pickle import PicklingError
+from pickle import PicklingError  # nosec
 
 # Multiprocessing imports
 import multiprocessing

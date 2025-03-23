@@ -94,7 +94,7 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         manager.shutdown()
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
 
-    def test_reader(self):
+    def test_reader(self, close_fds):
         # Text to send
         text_in = "a😂" * 10
 
@@ -105,8 +105,7 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         # from subprocess import Popen, PIPE
         proc = Popen(['echo', '-n', text_in],  # -n prevents echo from adding a newline character
                      stdout=PIPE,
-                     universal_newlines=True,
-                     close_fds=True)
+                     universal_newlines=True)
 
         # Connect the reader
         # from queuelink import QueueHandleAdapterReader

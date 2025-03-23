@@ -64,29 +64,37 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         if self.queue_module == 'manager':
             return getattr(self.manager, self.queue_class)()
 
-    def subprocess_factory(self, text_in: str=None, newlines: bool=True, line_count: int=1):
+    def subprocess_factory(self,
+                           text_in: str=None,
+                           newlines: bool=True,
+                           close_fds: bool=True,
+                           line_count: int=1):
         if not text_in:
             text_in = 'a😂' * 10
 
-        proc = subprocess.Popen([self.sampleCommandPath,
+        proc = subprocess.Popen([self.sample_command_path,
                                  '--manual', text_in,
                                  '--lines', str(line_count)],
                                 stdout=PIPE,
                                 universal_newlines=newlines,
-                                close_fds=True)
+                                close_fds=close_fds)
 
         return proc
 
     def movement_subprocess_pipe(self,
                                  wrap_when: WRAP_WHEN,
                                  newlines: bool,
+                                 close_fds: bool,
                                  line_count: int=1) -> (Union[str, ContentWrapper], str):
         """Reusable source-destination method for subprocesses"""
         # Text in
         text_in = 'a😂' * 10
 
         # Subprocess
-        proc = self.subprocess_factory(text_in=text_in, newlines=newlines, line_count=line_count)
+        proc = self.subprocess_factory(text_in=text_in,
+                                       newlines=newlines,
+                                       line_count=line_count,
+                                       close_fds=close_fds)
 
         # Destination queues
         dest_q = self.queue_factory()
@@ -180,9 +188,11 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         return text_in, wrapper
 
-    @parameterized.expand(itertools.product([True, False], WRAP_WHEN))
-    def test_read_subprocess_pipe(self, newlines, wrap_when):
-        text_in, wrapper = self.movement_subprocess_pipe(wrap_when=wrap_when, newlines=newlines)
+    @parameterized.expand(itertools.product([True, False], [True, False], WRAP_WHEN))
+    def test_read_subprocess_pipe(self, newlines, close_fds, wrap_when):
+        text_in, wrapper = self.movement_subprocess_pipe(wrap_when=wrap_when,
+                                                         newlines=newlines,
+                                                         close_fds=close_fds)
 
         # If newlines is false the value will be a bytes
         out_value = wrapper.value if isinstance(wrapper, ContentWrapper) else wrapper

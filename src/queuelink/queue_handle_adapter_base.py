@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 import random
 import tempfile  # For comparisons
+import threading
 
 from threading import Thread  # For non-multi-processing queues
 from pickle import PicklingError
@@ -17,6 +18,21 @@ from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
 from .common import DIRECTION
 from .common import is_threaded
+
+
+class MessageCounter(object):
+    def __init__(self, thread_only: bool=False):
+        self.counter = threading.local() if thread_only else multiprocessing.Value('Q')
+        self.counter.value = 0
+
+    def increment(self):
+        self.counter.value += 1
+
+    def __getattr__(self, attr):
+        if attr == 'value':
+            return object.__getattribute__(self, 'counter').value
+        else:
+            return object.__getattribute__(self, attr)
 
 
 class _QueueHandleAdapterBase(ClassTemplate):
@@ -89,7 +105,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Store the number of messages processed
         # Q unsigned long long https://docs.python.org/3/library/array.html#module-array
-        self.messages_processed = 0 if thread_only else multiprocessing.Value('Q')
+        self.messages_processed = MessageCounter()
 
         # Store other args
         self.kwargs = kwargs
@@ -247,7 +263,4 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
     def get_messages_processed(self):
         """Return the number of messages moved by this adapter."""
-        if isinstance(self.messages_processed, int):
-            return self.messages_processed
-
         return self.messages_processed.value

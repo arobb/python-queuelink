@@ -16,16 +16,19 @@ from parameterized import parameterized_class
 from tests.tests import context
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
 from queuelink import QueueHandleAdapterWriter
+from queuelink import Timer
 
 # Queue type list plus start methods
 CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
-                                                  PROC_START_METHODS)
+                                                  PROC_START_METHODS,
+                                                     [True, False])
 
 
-@parameterized_class(('queue_type', 'start_method'), CARTESIAN_QUEUE_TYPES_START_LIST)
+@parameterized_class(('queue_type', 'start_method', 'thread_only'),
+                     CARTESIAN_QUEUE_TYPES_START_LIST)
 class QueueLinkHandleAdapterWriterTestCase(unittest.TestCase):
     def setUp(self):
-        self.timeout = 60  # Some spawn instances needed a little more time
+        self.timeout = 10  # Some spawn instances needed a little more time
 
         content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
 
@@ -65,7 +68,7 @@ class QueueLinkHandleAdapterWriterTestCase(unittest.TestCase):
         src_queue = self.queue_factory()
 
         # Name
-        name = f'binary_{binary}_handle_type_{handle_type}'
+        name = f'binary_{binary}_handle_type_{handle_type}_thread_only_{self.thread_only}'
 
         # File open type
         mode = 'w+b' if binary else 'w+'
@@ -78,14 +81,16 @@ class QueueLinkHandleAdapterWriterTestCase(unittest.TestCase):
                     name=name,
                     queue=src_queue,
                     handle=f,
-                    start_method=self.start_method)
+                    start_method=self.start_method,
+                    thread_only=self.thread_only)
 
             elif handle_type == 'string':
                 writer = QueueHandleAdapterWriter(
                     name=name,
                     queue=src_queue,
                     handle=f.name,
-                    start_method=self.start_method)
+                    start_method=self.start_method,
+                    thread_only=self.thread_only)
 
             elif handle_type == 'path':
                 temp_path = Path(f.name)
@@ -93,20 +98,30 @@ class QueueLinkHandleAdapterWriterTestCase(unittest.TestCase):
                     name=name,
                     queue=src_queue,
                     handle=temp_path,
-                    start_method=self.start_method)
+                    start_method=self.start_method,
+                    thread_only=self.thread_only)
 
             # Put content into the queue
             for i in range(count):
                 src_queue.put(text_in.encode('utf8') if binary else text_in)
 
             # Wait until the writer is done processing messsages
+            logging_timer = Timer(interval=0.25)
+            timeout_timer = Timer(interval=self.timeout)
             while writer.get_messages_processed() < count:
                 processed_count = writer.get_messages_processed()
-                logging.info(f"Not done yet: processed {processed_count} of {count}")
+
+                if logging_timer.interval():
+                    logging.info(f"Not done yet: processed {processed_count} of {count}")
 
                 if not writer.is_alive():
-                    logging.warning(f"Writer process has died")
+                    logging.error(f'Writer process has died')
                     break
+
+                if timeout_timer.interval():
+                    writer.close()
+                    logging.error(f'Writer test timed out: processed {processed_count} of {count}')
+                    self.fail(f'Writer test timed out: processed {processed_count} of {count}')
 
                 time.sleep(.001)
 

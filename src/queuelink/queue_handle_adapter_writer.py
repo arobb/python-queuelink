@@ -83,29 +83,12 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             # Otherwise open as a text file
             return open(location, mode='w+')  # pylint: disable=unspecified-encoding
 
-        def message_processed(queue_obj: UNION_SUPPORTED_QUEUES,
-                              counter):
-            """Perform actions to indicate a message has been fully processed."""
-            if isinstance(counter, int):
-                # In a threaded instance, this is a process-wide variable
-                counter += 1
-            else:
-                # Increment counter
-                # Only one writer per instance, so this can be incremented
-                # safely without a lock
-                counter.value += 1
-
-            # Signal to the queue that we are done processing the line
-            if hasattr(queue_obj, 'task_done'):
-                queue_obj.task_done()
-
-        logger_name = f'{__name__}.queue_handle_adapter.{name}'
-        log = logging.getLogger(logger_name)
+        log = logging.getLogger(f'{__name__}.queue_handle_adapter.{name}')
         log.addHandler(logging.NullHandler())
 
-        log.info("Starting writer process")
+        log.info('Starting writer process')
         if hasattr(handle, 'closed') and handle.closed:
-            log.warning("Pipe handle is already closed")
+            log.warning('Handle is already closed')
 
         else:
             flush_timer = Timer(interval=1)  # Flush to disk at least once a second
@@ -127,7 +110,7 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
 
                         # Lazily open the file handle if it is not already open
                         if not handle_ready:
-                            handle = open_location(handle_name)
+                            handle = open_location(handle_name)  # pylint: disable=possibly-used-before-assignment
                             handle_ready = True
 
                         # Write content into the file
@@ -135,7 +118,11 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                         handle.write(content)
 
                     # Indicate we finished processing a record
-                    message_processed(queue, messages_processed)
+                    messages_processed.increment()
+
+                    # Signal to the queue that we are done processing the line
+                    if hasattr(queue, 'task_done'):
+                        queue.task_done()
 
                     # Flush the pipe to make sure it gets to the process
                     if flush_timer.interval():

@@ -184,13 +184,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                     queue.put(content)
                     log.debug('Sent to queue')
 
-                # Increment counter
-                if isinstance(messages_processed, int):
-                    messages_processed += 1
-                else:
-                    # Only one reader per instance, so this can be incremented
-                    # safely without a lock
-                    messages_processed.value += 1
+                    # Increment counter
+                    messages_processed.increment()
 
                 # Check whether we should stop now
                 if stop_event.is_set():

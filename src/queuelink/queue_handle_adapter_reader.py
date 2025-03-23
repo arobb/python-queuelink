@@ -7,6 +7,7 @@ import codecs
 import logging
 import multiprocessing  # For comparisons
 
+from .contentwrapper import get_len
 from .contentwrapper import ContentWrapper
 from .contentwrapper import WRAP_WHEN, conditional_wrap
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
@@ -177,7 +178,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
 
                 log.info('Read line, trying to get a lock')
                 with queue_lock:
-                    log.info('Enqueing line of character length %s', len(content))
+                    log.info('Enqueing line of character length %s, byte length %s',
+                             len(content), get_len(content))
                     if isinstance(content, ContentWrapper):  # Wrapped Connections return a CW
                         log.debug('Content is in a ContentWrapper')
 

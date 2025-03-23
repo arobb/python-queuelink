@@ -208,7 +208,6 @@ class _QueueHandleAdapterBase(ClassTemplate):
             self.process.join(timeout=1)
 
             if self.process.is_alive():
-                # self._log.info("Waiting for adapter to stop")
                 pass
             else:
                 break

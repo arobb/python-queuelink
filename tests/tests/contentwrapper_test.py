@@ -7,35 +7,13 @@ import unittest
 
 from pickle import PickleError, UnpicklingError
 from kitchen.text.converters import to_bytes
-from queuelink.contentwrapper import ContentWrapper, get_len
+from queuelink.contentwrapper import ContentWrapper, get_len, of_bytes_length
 from queuelink.contentwrapper import TYPES
 
 '''
 '''
 class QueueLinkContentWrapperTestCase(unittest.TestCase):
     def setUp(self):
-        def of_bytes_length(subject, length, round_func_name='floor'):
-            """
-            Calculates the length of a string in bytes, then generates a longer string that comes in at
-            or under "length"
-            """
-            subject_byte_count = get_len(subject)
-
-            # If the length is less than the byte count of the subject (say length 2 but the byte count is 4)
-            # return the subject unmodified
-            if length < subject_byte_count:
-                return subject
-
-            # Rounding function
-            round_func = getattr(math, round_func_name)
-
-            # subject_byte_count = 4
-            # length = 22
-            # math.floor(int(length=22) / subject_byte_count=4) = math.floor(5.5) = 5
-            # joined length = 20
-            subject_array = [subject] * int(round_func(int(length) / subject_byte_count))
-            return "".join(subject_array)
-
         self.contentUnderThreshold = of_bytes_length("😂", (ContentWrapper.THRESHOLD - 1))
         self.contentOverThreshold = of_bytes_length("😂", ContentWrapper.THRESHOLD + 1, round_func_name='ceil')
         self.content1m   = of_bytes_length("😂", 2**20)  #  1,048,576

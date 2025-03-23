@@ -8,7 +8,7 @@ import logging
 import multiprocessing  # For comparisons
 
 from .contentwrapper import ContentWrapper
-from .contentwrapper import WRAP_WHEN
+from .contentwrapper import WRAP_WHEN, conditional_wrap
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
 from .common import UNION_SUPPORTED_QUEUES, DIRECTION
 

@@ -20,6 +20,7 @@ from queuelink import QueueLink
 from queuelink import QueueHandleAdapterReader
 from queuelink import ContentWrapper, WRAP_WHEN
 from queuelink import safe_get
+from queuelink.contentwrapper import get_len, of_bytes_length
 
 # Queue type list plus start methods
 CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
@@ -120,10 +121,11 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
     def movement_multiprocess_conn(self,
                                    wrap_when: WRAP_WHEN,
                                    trusted: bool=True,
-                                   text_len: int=10) -> (Union[str, ContentWrapper], str):
+                                   text_len: int=10,
+                                   rounding_func: str='floor') -> (Union[str, ContentWrapper], str):
         """Reusable source-destination method for multiprocess connections"""
         # Text in
-        faces = '😂' * text_len
+        faces = of_bytes_length(subject='😂', length=text_len, round_func_name=rounding_func)
         text_in = faces if text_len == 1 else f'a{faces[:-1]}'  # include leading 'a'
         wrapper = None
 
@@ -204,8 +206,17 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                                                         ContentWrapper.THRESHOLD+1]))
     def test_wrapping(self, wrap_when, text_len):
         """Verify that wrapping happens when, and only when, it is supposed to"""
+        # Whether the current iteration is testing input under, at, or over the threshold
+        threshold_state = 'under' if text_len < ContentWrapper.THRESHOLD else 'over' \
+            if text_len > ContentWrapper.THRESHOLD else 'at'
+
+        # Whether to round down or up based on the byte size of the input string
+        rounding_func = 'ceil' if threshold_state == 'over' else 'floor'
+
+        # Get the output information
         text_in, wrapper = self.movement_multiprocess_conn(wrap_when=wrap_when,
-                                                           text_len=text_len)
+                                                           text_len=text_len,
+                                                           rounding_func=rounding_func)
 
         # Always
         if wrap_when == WRAP_WHEN.ALWAYS:
@@ -219,20 +230,26 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
 
         # Auto
         if wrap_when == WRAP_WHEN.AUTO:
-            if text_len < ContentWrapper.THRESHOLD:
+            if threshold_state == 'under':
                 self.assertNotIsInstance(wrapper, ContentWrapper,
-                                         "Wrap is set to Auto and text is under threshold, "
-                                         "but return is a ContentWrapper")
+                                         "Wrap is set to Auto and text (len "
+                                         f"{get_len(text_in)}) is under threshold ("
+                                         f"{ContentWrapper.THRESHOLD}), but return is a "
+                                         "ContentWrapper")
 
-            elif text_len == ContentWrapper.THRESHOLD:
+            elif threshold_state == 'at':
                 self.assertNotIsInstance(wrapper, ContentWrapper,
-                                         "Wrap is set to Auto and text is at threshold, "
-                                         "but return is a ContentWrapper")
+                                         "Wrap is set to Auto and text (len "
+                                         f"{get_len(text_in)}) is at threshold ("
+                                         f"{ContentWrapper.THRESHOLD}), but return is a "
+                                         "ContentWrapper")
 
             else:
                 self.assertIsInstance(wrapper, ContentWrapper,
-                                      f"Wrap is set to Auto, and text is over threshold but "
-                                      f"return is not a ContentWrapper")
+                                      "Wrap is set to Auto and text (len "
+                                         f"{get_len(text_in)}) is over threshold ("
+                                         f"{ContentWrapper.THRESHOLD}), but return is not a "
+                                         "ContentWrapper")
 
 
 if __name__ == "__main__":

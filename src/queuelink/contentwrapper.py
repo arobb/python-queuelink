@@ -3,8 +3,10 @@
 Representation of content for a queue where the values may exceed the native
 pipe size.
 """
+import math
 import os
 import tempfile
+
 from codecs import getreader
 from enum import Enum, auto
 from io import IOBase as file
@@ -24,6 +26,32 @@ def get_len(obj) -> int:
         subject_byte_count = len(to_bytes(obj))
 
     return subject_byte_count
+
+
+def of_bytes_length(subject, length, round_func_name='floor'):
+    """
+    Calculates the length of "subject" in bytes, then generates a longer object that comes
+    in at or under "length".
+
+    Set round_func_name to "ceil" to generate a longer string that comes in at or above
+    "length".
+    """
+    subject_byte_count = get_len(subject)
+
+    # If the length is less than the byte count of the subject (say length 2 but the byte
+    # count is 4) return the subject unmodified
+    if length < subject_byte_count:
+        return subject
+
+    # Rounding function
+    round_func = getattr(math, round_func_name)
+
+    # subject_byte_count = 4
+    # length = 22
+    # math.floor(int(length=22) / subject_byte_count=4) = math.floor(5.5) = 5
+    # joined length = 20
+    subject_array = [subject] * int(round_func(int(length) / subject_byte_count))
+    return "".join(subject_array)
 
 
 class TYPES(Enum):
@@ -244,3 +272,29 @@ class ContentWrapper(ClassTemplate):
             os.remove(self.location_name)
             self.location_handle = None
             self.location_name = None
+
+
+def conditional_wrap(content,
+                     wrap_when: WRAP_WHEN=WRAP_WHEN.AUTO,
+                     wrap_threshold: int=ContentWrapper.THRESHOLD):
+    """Method to wrap content only if it meets the given conditions.
+
+    Typically to keep values that would be stored in memory from being wrapped.
+
+    Passes wrap_threshold as the file threshold into the ContentWrapper instance.
+    """
+
+    # Never wrap
+    if wrap_when == WRAP_WHEN.NEVER:
+        return content
+
+    # Always wrap
+    if wrap_when == WRAP_WHEN.ALWAYS:
+        return ContentWrapper(content, threshold=wrap_threshold)
+
+    # Wrap only over certain thresholds
+    if wrap_when == WRAP_WHEN.AUTO \
+            and get_len(content) > wrap_threshold:
+        return ContentWrapper(content, threshold=wrap_threshold)
+
+    return content

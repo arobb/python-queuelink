@@ -218,8 +218,9 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         Does not force a drain of the queues.
         """
-        if self._stop and self.started:
-            self._stop()
+        if hasattr(self, '_stop') and hasattr(self, 'started'):
+            if self.started:
+                self._stop()
 
         # Delete/unlink other resources
         attributes = [

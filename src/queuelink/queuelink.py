@@ -196,8 +196,9 @@ class QueueLink(ClassTemplate):
         """Remove managed objects started within QueueLink"""
 
         # Make sure processes are stopped
-        if self.stop and self.started:
-            self.stop()
+        if hasattr(self, 'stop') and hasattr(self, 'started'):
+            if self.started:
+                self.stop()
 
         # Unset these variables to release any objects they held
         unset_list = ['metrics_queue',  # Metrics

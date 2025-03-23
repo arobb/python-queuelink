@@ -110,6 +110,7 @@ class QueueLink(ClassTemplate):
     def __init__(self,
                  source: UNION_SUPPORTED_QUEUES=None,
                  destination: Union[UNION_SUPPORTED_QUEUES, List[UNION_SUPPORTED_QUEUES]]=None,
+                 *,  # Remainder are keyword arguments
                  name: str=None,
                  log_name: str=None,
                  start_method: str=None,

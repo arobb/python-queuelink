@@ -38,8 +38,8 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
         log_config_fname = os.path.join(content_dir, 'testing_logging_config.ini')
         logging.config.fileConfig(fname=log_config_fname, disable_existing_loggers=False)
 
-        sampleCommandPath = os.path.join(content_dir, 'line_output.py')
-        self.sampleCommandPath = sampleCommandPath
+        sample_command_path = os.path.join(content_dir, 'line_output.py')
+        self.sample_command_path = sample_command_path
 
         # Queue info and start method
         self.queue_module = self.queue_type[0]

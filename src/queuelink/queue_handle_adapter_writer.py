@@ -30,6 +30,7 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
 
     def __init__(self,
                  queue: UNION_SUPPORTED_QUEUES,
+                 *,  # End of positional arguments
                  handle: UNION_SUPPORTED_WRITER_TYPES=None,
                  name: str=None,
                  log_name: str=None,
@@ -52,7 +53,8 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                          trusted=trusted)
 
     @staticmethod
-    def queue_handle_adapter(name,
+    def queue_handle_adapter(*,  # All named parameters are required keyword arguments
+                             name,
                              handle,
                              queue,
                              queue_lock,
@@ -72,6 +74,31 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             queue_lock (Lock): Lock used to indicate a write in progress
             stop_event (Event): Used to determine whether to stop the process
         """
+        def open_location(location: Union[str, PathLike]):
+            """Open a location string/Path and return a normal IO handle."""
+            if hasattr(line, 'decode'):
+                # Open the output file in binary mode
+                return open(location, mode='w+b')
+
+            # Otherwise open as a text file
+            return open(location, mode='w+')  # pylint: disable=unspecified-encoding
+
+        def message_processed(queue_obj: UNION_SUPPORTED_QUEUES,
+                              counter):
+            """Perform actions to indicate a message has been fully processed."""
+            if isinstance(counter, int):
+                # In a threaded instance, this is a process-wide variable
+                counter += 1
+            else:
+                # Increment counter
+                # Only one writer per instance, so this can be incremented
+                # safely without a lock
+                counter.value += 1
+
+            # Signal to the queue that we are done processing the line
+            if hasattr(queue_obj, 'task_done'):
+                queue_obj.task_done()
+
         logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)
         log.addHandler(logging.NullHandler())
@@ -100,31 +127,15 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
 
                         # Lazily open the file handle if it is not already open
                         if not handle_ready:
-                            # Check if this first line is a binary object
-                            if hasattr(line, 'decode'):
-                                # Open the output file in binary mode
-                                handle = open(handle, mode='w+b')
-                                handle_ready = True
-                            else:
-                                # Otherwise open as a text file
-                                handle = open(handle, mode='w+')
-                                handle_ready = True
+                            handle = open_location(handle_name)
+                            handle_ready = True
 
                         # Write content into the file
                         log.info('Writing line to %s', name)
                         handle.write(content)
 
-                    # Increment counter
-                    if isinstance(messages_processed, int):
-                        messages_processed += 1
-                    else:
-                        # Only one writer per instance, so this can be incremented
-                        # safely without a lock
-                        messages_processed.value += 1
-
-                    # Signal to the queue that we are done processing the line
-                    if hasattr(queue, 'task_done'):
-                        queue.task_done()
+                    # Indicate we finished processing a record
+                    message_processed(queue, messages_processed)
 
                     # Flush the pipe to make sure it gets to the process
                     if flush_timer.interval():
@@ -148,11 +159,8 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             handle.flush()
 
         # Close the handle if we opened it
-        try:
-            if handle_name:
-                handle.close()
-        except NameError:
-            pass
+        if 'handle_name' in locals():
+            handle.close()
 
         # Clean up references
         # Prevent "UserWarning: ResourceTracker called reentrantly for resource cleanup,

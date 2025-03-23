@@ -145,7 +145,7 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
                     if not block:
                         raise Empty
 
-                    elif wait(time_out=cycle_time):  # True if stop event was set
+                    if wait(time_out=cycle_time):  # True if stop event was set
                         raise Empty
 
                     continue
@@ -157,7 +157,7 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
                 if not block:
                     raise Empty
 
-                elif wait(cycle_time):  # True if stop event was set
+                if wait(cycle_time):  # True if stop event was set
                     # Raise empty if the stop_event is set to break out of the loop
                     raise Empty
 

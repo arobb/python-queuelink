@@ -6,8 +6,6 @@ from typing import List, Union
 
 import functools
 import logging
-import queue
-import time
 
 from builtins import str as text
 from inspect import signature
@@ -16,13 +14,10 @@ from threading import Thread  # For non-multi-processing queues
 
 # Multiprocessing imports
 import multiprocessing
-from multiprocessing import queues as mp_queue_classes
-from multiprocessing.managers import BaseProxy
 
 # Internal imports
 from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
-from .timer import Timer
 from .metrics import Metrics
 from .common import DIRECTION
 from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
@@ -281,11 +276,11 @@ class QueueLink(ClassTemplate):
         counter = 0
         metrics = Metrics()
 
-        latency_metric_id = metrics.add_element(type='timing', name='pipe latency')
+        latency_metric_id = metrics.add_element(metric_type='timing', name='pipe latency')
         metrics.start(latency_metric_id)
         metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue, max_size=100)
 
-        counting_metric_id = metrics.add_element(type='counting', name='movement count')
+        counting_metric_id = metrics.add_element(metric_type='counting', name='movement count')
 
         while True:
             # Check for stop
@@ -550,10 +545,7 @@ class QueueLink(ClassTemplate):
             self._stop_publisher(source_id)
 
     @validate_direction
-    def unregister_queue(self,
-                         queue_id: Union[str, int],
-                         direction: DIRECTION,
-                         start_method: str=None):
+    def unregister_queue(self, queue_id: Union[str, int], direction: DIRECTION):
         """Detach a Queue proxy from this _QueueHandleAdapterBase
 
         Returns the clientId that was removed
@@ -561,7 +553,6 @@ class QueueLink(ClassTemplate):
         Args:
             queue_id (string): ID of the client
             direction (DIRECTION): source or destination
-            start_method (string): How to start a process-based publisher (fork, forkserver, spawn)
 
         Returns:
             string. ID of the client queue
@@ -588,7 +579,7 @@ class QueueLink(ClassTemplate):
 
                 # Restart publishers with the updated destinations
                 for source_id in self.client_queues_source:
-                    self._start_publisher(source_id, start_method)
+                    self._start_publisher(source_id)
 
         return text(queue_id)
 
@@ -612,7 +603,7 @@ class QueueLink(ClassTemplate):
 
                 # If this is a downstream queue, we need to make sure all
                 # upstream queues are empty, too
-                if queue_id in self.client_queues_destination.keys():
+                if queue_id in self.client_queues_destination:
                     self._log.debug("First checking upstream queue(s) of %s", queue_id)
 
                     for source_id in self.client_queues_source:

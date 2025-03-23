@@ -24,7 +24,7 @@ def connection_readline(self):
     while True:
         try:
             if self.stop_event.is_set():
-                return
+                return None
 
             if self.poll(0.005):
                 if self.trusted:
@@ -35,18 +35,22 @@ def connection_readline(self):
                 return received
 
         except EOFError:
-            return
+            return None
 
         except OSError as e:
             # Bad file descriptor / handle is closed
             if e.errno == 9 or str(e).lower() == 'handle is closed':
-                return
+                return None
 
             # Some other OS error
             raise e
 
 def add_methods_to_connections(conn, trusted):
+    """Attach a new method and attributes to an existing object."""
     if isinstance(conn, multiprocessing.connection.Connection):
+        # Use the "descriptor protocol" to bind the method to an existing object
+        # https://docs.python.org/3.13/howto/descriptor.html
+        # https://stackoverflow.com/a/2982
         conn.readline = connection_readline.__get__(conn)
         conn.flush = lambda: None
         conn.trusted = trusted
@@ -64,6 +68,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
 
     def __init__(self,
                  queue: UNION_SUPPORTED_QUEUES,
+                 *,  # End of positional arguments
                  handle=None,
                  name: str=None,
                  log_name: str=None,
@@ -99,7 +104,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         # Initialize the parent class
         # pylint: disable=bad-super-call
         # Py3 supports super().__init__; this form is kept for backward compat
-        super(type(self), self).__init__(queue=queue,
+        super().__init__(queue=queue,
                                          subclass_name=__name__,
                                          queue_direction=DIRECTION.FROM,
                                          name=name,
@@ -111,8 +116,10 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                                          wrap_when=wrap_when,
                                          wrap_threshold=wrap_threshold)
 
+    # pylint: disable=arguments-differ
     @staticmethod
-    def queue_handle_adapter(name,
+    def queue_handle_adapter(*,  # All named parameters are required keyword arguments
+                             name,
                              handle,
                              queue,
                              queue_lock,
@@ -134,6 +141,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             stop_event (Event): Used to determine whether to stop the process
             trusted (bool): Whether to trust Connection objects
             wrap_when (WRAP_WHEN): When to use a ContentWrapper
+            wrap_threshold (int): Size limit for a line before it is wrapped in a ContentWrapper
         """
         logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)
@@ -161,26 +169,15 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             # https://stackoverflow.com/a/2813530
             while True:
                 line = handle.readline()
-                if not line:
+                if line is None:
                     break
 
                 # Wrap in a ContentWrapper
-                if wrap_when == WRAP_WHEN.NEVER:
-                    content = line
-
-                elif wrap_when == WRAP_WHEN.ALWAYS:
-                    content = ContentWrapper(line)
-
-                elif wrap_when == WRAP_WHEN.AUTO \
-                        and len(line) > wrap_threshold:
-                    content = ContentWrapper(line)
-
-                else:
-                    content = line
+                content = conditional_wrap(line, wrap_when=wrap_when, wrap_threshold=wrap_threshold)
 
                 log.info('Read line, trying to get a lock')
                 with queue_lock:
-                    log.info('Enqueing line of length %s', len(content))
+                    log.info('Enqueing line of character length %s', len(content))
                     if isinstance(content, ContentWrapper):  # Wrapped Connections return a CW
                         log.debug('Content is in a ContentWrapper')
 

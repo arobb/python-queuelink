@@ -5,12 +5,13 @@ from __future__ import unicode_literals
 import random
 import tempfile  # For comparisons
 
-from _io import _IOBase  # For comparisons
-
 from threading import Thread  # For non-multi-processing queues
+from pickle import PicklingError
 
 # Multiprocessing imports
 import multiprocessing
+
+from _io import _IOBase  # For comparisons
 
 from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
@@ -21,6 +22,7 @@ from .common import is_threaded
 class _QueueHandleAdapterBase(ClassTemplate):
     def __init__(self,
                  queue,
+                 *,  # End of positional arguments
                  subclass_name: str,
                  queue_direction: DIRECTION,
                  name:str =None,
@@ -104,7 +106,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
         Raises:
             Exception
         """
-        raise Exception("Don't pickle me!")
+        raise PicklingError("Don't pickle me!")
 
     def set_handle(self, handle):
         """Set the pipe handle to use
@@ -163,7 +165,8 @@ class _QueueHandleAdapterBase(ClassTemplate):
         self.close()
 
     @staticmethod
-    def queue_handle_adapter(name,
+    def queue_handle_adapter(*,  # All named parameters are required keyword arguments
+                             name,
                              handle,
                              queue,
                              queue_lock,
@@ -250,14 +253,11 @@ class _QueueHandleAdapterBase(ClassTemplate):
         """
         return self.process.is_alive()
 
-    def is_drained(self, client_id=None):
+    def is_drained(self):
         """Check alive and empty
 
         Attempts clean semantic response to "is there, or will there be, data
         to read?"
-
-        Args:
-            client_id (string): Registration ID to check
 
         Returns:
             bool: True if fully drained, False if not
@@ -272,15 +272,10 @@ class _QueueHandleAdapterBase(ClassTemplate):
         # Alive (True) means we are not drained
         drained = drained and not self.is_alive()
 
-        # Checks a similar function on the queue_link
-        # drained = drained and self.queue_link.is_drained(queue_id=client_id)
-
-        # Not checking self.is_empty because that is effectively done by
-        # running self.queue_link.is_drained()
-
         return drained
 
     def get_messages_processed(self):
+        """Return the number of messages moved by this adapter."""
         if isinstance(self.messages_processed, int):
             return self.messages_processed
 

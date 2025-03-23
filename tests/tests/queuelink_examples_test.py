@@ -3,16 +3,20 @@ import logging
 import multiprocessing
 import os
 import unittest
-from multiprocessing import Manager
-from subprocess import Popen, PIPE
-from tests.tests import context
 
+from itertools import product
+from subprocess import Popen, PIPE
+
+from parameterized import parameterized, parameterized_class
+
+from tests.tests import context
 from queue import Queue
 from queuelink import QueueLink
 from queuelink import QueueHandleAdapterReader
-from queuelink import DIRECTION
+from queuelink.common import PROC_START_METHODS
 
 
+@parameterized_class(('start_method'), product(PROC_START_METHODS))
 class QueueLinkExampleTestCase(unittest.TestCase):
     def setUp(self):
         content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
@@ -20,13 +24,13 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         log_config_fname = os.path.join(content_dir, 'testing_logging_config.ini')
         logging.config.fileConfig(fname=log_config_fname, disable_existing_loggers=False)
 
-    def test_example_1(self):
+    def test_example_threaded(self):
         # Source and destination queues
         source_q = Queue()
         dest_q = Queue()
 
         # Create the QueueLink
-        queue_link = QueueLink(name="my link")
+        queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
         source_id = queue_link.read(queue_proxy=source_q)
@@ -45,10 +49,10 @@ class QueueLinkExampleTestCase(unittest.TestCase):
     def test_cross_thread_multiprocess(self):
         # Source and destination
         source_q = Queue()  # Thread-based
-        dest_q = multiprocessing.Queue()  # Process-based
+        dest_q = multiprocessing.get_context(self.start_method).Queue()  # Process-based
 
         # Create the QueueLink
-        queue_link = QueueLink(name="my link")
+        queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
         source_id = queue_link.read(queue_proxy=source_q)
@@ -66,14 +70,14 @@ class QueueLinkExampleTestCase(unittest.TestCase):
 
     def test_cross_thread_managed_multiprocess(self):
         # Process manager
-        manager = Manager()
+        manager = multiprocessing.get_context(self.start_method).Manager()
 
         # Source and destination
         source_q = Queue()  # Thread-based
         dest_q = manager.Queue()  # Process-based
 
         # Create the QueueLink
-        queue_link = QueueLink(name="my link")
+        queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
         source_id = queue_link.read(queue_proxy=source_q)
@@ -87,6 +91,7 @@ class QueueLinkExampleTestCase(unittest.TestCase):
 
         # Retrieve the text from the destination queue!
         text_out = dest_q.get(timeout=1)
+        manager.shutdown()
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
 
     def test_reader(self):
@@ -94,7 +99,7 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         text_in = "a😂" * 10
 
         # Destination queue
-        dest_q = multiprocessing.Queue()  # Process-based
+        dest_q = multiprocessing.get_context(self.start_method).Queue()  # Process-based
 
         # Subprocess, simple example sending some text to stdout
         # from subprocess import Popen, PIPE
@@ -106,7 +111,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         # Connect the reader
         # from queuelink import QueueHandleAdapterReader
         read_adapter = QueueHandleAdapterReader(queue=dest_q,
-                                                handle=proc.stdout)
+                                                handle=proc.stdout,
+                                                start_method=self.start_method)
 
         # Get the text from the queue
         text_out = dest_q.get()

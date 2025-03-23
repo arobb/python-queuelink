@@ -62,6 +62,7 @@ SIMPLE_QUEUES = [
 ]
 
 # Union type for typing support
+# pylint: disable=invalid-name
 UNION_SUPPORTED_QUEUES = Union[queue.Queue,
                                queue.LifoQueue,
                                queue.PriorityQueue,

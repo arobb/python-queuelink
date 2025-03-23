@@ -21,6 +21,7 @@ result_table_schema = 'session_id, python_version, test_name, start_method, sour
 
 
 class ThroughputResults(object):
+    """Manage results storage for QueueLink throughput tests."""
     def __init__(self,
                  session_id: str,
                  session_time: datetime,
@@ -75,6 +76,7 @@ class ThroughputResults(object):
             self.session_time = datetime.strptime(session_time, '%Y-%m-%d %H:%M:%S')
 
     def start_session(self):
+        """Establish start time and write session information to DB."""
         time = self.session_time.strftime('%Y-%m-%d %H:%M:%S')
         sql = f'INSERT OR IGNORE INTO {test_session_table_name} VALUES ("{self.session_id}", ' \
               f'"{time}")'
@@ -100,6 +102,7 @@ class ThroughputResults(object):
 
 
 class ThroughputResultsOutput():
+    """Format throughput results."""
     def __init__(self):
         self.db = sqlite3.connect(db_name)
         self.db.row_factory = sqlite3.Row  # Set the kind of result objects that get returned

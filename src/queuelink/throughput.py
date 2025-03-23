@@ -18,7 +18,6 @@ from threading import Thread  # For non-multi-processing queues
 from typing import Union
 
 from queuelink import QueueLink, DIRECTION, safe_get
-from queuelink.metrics import Metrics
 from queuelink.timer import Timer
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST, is_threaded
 from queuelink.throughput_results import ThroughputResults
@@ -36,7 +35,7 @@ def send_elements(src_q: QUEUE_TYPE_LIST, text: str, element_count: int):
         src_q.put(text)
 
 
-class concurrent_context(object):
+class ConcurrentContext(object):
     """Handle concurrency objects"""
     def __init__(self, start_method: str=None):
         self.start_method = start_method
@@ -48,6 +47,7 @@ class concurrent_context(object):
             self.multiprocessing_ctx = None
 
     def start_manager(self):
+        """Start a multiprocessing manager if one is in use."""
         if not self.start_method:
             raise AttributeError('Cannot use a manager without a start method')
 
@@ -55,6 +55,7 @@ class concurrent_context(object):
             self.manager = self.multiprocessing_ctx.Manager()
 
     def stop(self):
+        """Stop a multiprocessing manager if one is in use."""
         if hasattr(self.manager, 'shutdown'):
             self.manager.shutdown()
 
@@ -72,6 +73,7 @@ class concurrent_context(object):
         return Parallel
 
     def queue_factory(self, module: str, class_name: str):
+        """Return a queue from the given module and class."""
         if module == 'queue':
             return getattr(queue, class_name)()
 
@@ -84,6 +86,7 @@ class concurrent_context(object):
 
 
 class Throughput(object):
+    """Abstract class for other Throughput classes."""
     def __init__(self, start_method: str):
         self.timeout = 60  # Some spawn instances needed a little more time
         self.text = 'a😂' * 10
@@ -92,13 +95,14 @@ class Throughput(object):
 
         # Where to find sample commands and test logging config
         content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
-        sampleCommandPath = os.path.join(content_dir, 'line_output.py')
-        self.sampleCommandPath = sampleCommandPath
+        sample_command_path = os.path.join(content_dir, 'line_output.py')
+        self.sample_command_path = sample_command_path
 
         self.start_method = start_method
-        self.ctx = concurrent_context(start_method=start_method)
+        self.ctx = ConcurrentContext(start_method=start_method)
 
     def stop(self):
+        """Stop the internal multiprocessing manager."""
         self.ctx.stop()
 
     def queue_factory(self, *args, **kwargs):
@@ -138,7 +142,6 @@ class Throughput_QueueLink(Throughput):
 
     def time_to_first_element(self):
         """Measure how long it takes for the first element to be available"""
-        timer = Timer()
         source_q = self.get_source_q()
         dest_q = self.get_dest_q()
         queue_link = QueueLink(name='throughput', source=source_q, start_method=self.start_method)
@@ -165,7 +168,6 @@ class Throughput_QueueLink(Throughput):
     def avg_time_per_element_after_first_queuelink(self):
         """Measure the nominal latency"""
         iterations = 500
-        timer = Timer()
         source_q = self.get_source_q()
         dest_q = self.get_dest_q()
         queue_link = QueueLink(name='avg_throughput', source=source_q, destination=dest_q,
@@ -177,7 +179,7 @@ class Throughput_QueueLink(Throughput):
 
         # Do more
         timing_list = []
-        for i in range(iterations):
+        for _ in range(iterations):
             # Place the next item into the source
             source_q.put(self.text)
             start = Timer.now()
@@ -188,6 +190,8 @@ class Throughput_QueueLink(Throughput):
             timing = end - start
 
             timing_list.append(timing)
+
+        queue_link.close()
 
         results = {'mean': round(sum(timing_list) / len(timing_list), 8),
                    'median': round(statistics.median(timing_list), 8),
@@ -211,7 +215,6 @@ class Throughput_QueueLink(Throughput):
 
     def elements_per_second_queuelink(self):
         """Measure the number of elements per second"""
-        timer = Timer()
         test_q = self.get_source_q()
         source_q = self.get_source_q()
         dest_q = self.get_dest_q()

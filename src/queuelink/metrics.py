@@ -28,7 +28,7 @@ from .classtemplate import ClassTemplate
 from .timer import Timer
 
 
-class BaseMetric(ClassTemplate):
+class BaseMetric(ClassTemplate):  # pylint: disable=too-few-public-methods
     """Abstract class for QueueLink monitoring metrics"""
     name = ""
     data_points = []
@@ -43,6 +43,7 @@ class CountMetric(BaseMetric):
         self._initialize_logging_with_log_name(__name__)
 
     def increment(self):
+        """Add 1 to the internal counter"""
         self.count += 1
 
 class TimedMetric(BaseMetric):
@@ -125,17 +126,19 @@ class Metrics(ClassTemplate):
         return ''.join([random.choice(  # nosec
                 '0123456789ABCDEF') for x in range(6)])
 
-    def add_element(self, type: str, name: str=None) -> str:
+    def add_element(self, metric_type: str, name: str = None) -> str:
         """timing or counting"""
         element_id = self.new_id()
-        while element_id in self.elements.keys():
+        while element_id in self.elements:
             element_id = self.new_id()
             self._log.warning('Element ID: %s', str(element_id))
 
-        if type == 'timing':
+        if metric_type == 'timing':
             m = TimedMetric(name=name)
-        elif type == 'counting':
+        elif metric_type == 'counting':
             m = CountMetric(name=name)
+        else:
+            raise ValueError(f'Unknown metric type "{metric_type}"')
 
         self.elements[element_id] = {'name': name,
                                      'metrics': m}
@@ -184,7 +187,7 @@ class Metrics(ClassTemplate):
         """
         data_list = []
 
-        for element_id in self.elements.keys():
+        for element_id in self.elements:
             data_list.append(self.get_data(element_id))
 
         return {k: v for d in data_list for k, v in d.items()}

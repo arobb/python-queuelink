@@ -21,18 +21,22 @@ from .common import is_threaded
 
 
 class MessageCounter(object):
+    """Track the number of messages processed by an Adapter.
+
+    Access the count with MessageCenter.value"""
     def __init__(self, thread_only: bool=False):
         self.counter = threading.local() if thread_only else multiprocessing.Value('Q')
         self.counter.value = 0
 
     def increment(self):
+        """Increment the message counter."""
         self.counter.value += 1
 
     def __getattr__(self, attr):
         if attr == 'value':
             return object.__getattribute__(self, 'counter').value
-        else:
-            return object.__getattribute__(self, attr)
+
+        return object.__getattribute__(self, attr)
 
 
 class _QueueHandleAdapterBase(ClassTemplate):

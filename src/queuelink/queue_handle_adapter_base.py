@@ -215,35 +215,6 @@ class _QueueHandleAdapterBase(ClassTemplate):
             if hasattr(self, attr):
                 setattr(self, attr, None)
 
-    def is_empty(self, client_id=None):
-        """Checks whether the primary Queue or any clients' Queues are empty
-
-        Returns True ONLY if ALL queues are empty if clientId is None
-        Returns True ONLY if both main queue and specified client queue are
-            empty when clientId is provided
-
-        Args:
-            client_id (string): ID of the client
-
-        Returns:
-            bool
-        """
-        with self.queue_lock:
-            if client_id is not None:
-                empty = self.queue.empty() \
-                        and self.queue_link.is_empty(client_id)
-
-                self._log.debug("Reporting pipe empty for client %s: %s",
-                                client_id, empty)
-
-            else:
-                empty = self.queue.empty() \
-                        and self.queue_link.is_empty()
-
-                self._log.debug("Reporting pipe empty: %s", empty)
-
-            return empty
-
     def is_alive(self):
         """Check whether the thread managing the pipe > Queue movement
         is still active

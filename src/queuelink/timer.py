@@ -10,13 +10,12 @@ class Timer:
     SEC_TO_MICRO = 10**6
     SEC_TO_NANO = 10**9
 
-    def __init__(self, interval=10):
+    def __init__(self, interval: float=10):
         """Timing events: Establish start time reference for lap and interval
 
-        ``interval`` supports resolution to microseconds. Default is 10
-        seconds.
-
-        :param float interval: Seconds between intervals
+        Args:
+            interval: Reference duration for ``interval`` method. Supports resolution to
+                microseconds. Default is 10 seconds.
         """
         self.interval_period = interval
         self.start_time = self.now()
@@ -24,12 +23,11 @@ class Timer:
         self.last_interval_count = 0
 
     @staticmethod
-    def now():
-        """Returns the current Unix epoch time in seconds as a float
+    def now() -> float:
+        """Returns the current Unix epoch time
 
-        Returned value has resolution to microseconds.
-
-        :return: float seconds
+        Returns:
+            Current Unix epoch time in integer seconds with decimal resolution to microseconds.
         """
         current = time.mktime(datetime.datetime.now().timetuple()) \
             + datetime.datetime.now().microsecond / float(Timer.SEC_TO_MICRO)
@@ -37,35 +35,44 @@ class Timer:
         return float(current)
 
     @staticmethod
-    def now_micro():
-        """Returns the current Unix epoch time in microseconds as an int
+    def now_micro() -> int:
+        """Returns the current Unix epoch time in microseconds as an integer
 
-        Returned value has resolution to microseconds.
-
-        :return: int seconds
+        Returns:
+            Current Unix epoch time in microseconds.
         """
         current = time.mktime(datetime.datetime.now().timetuple()) * Timer.SEC_TO_MICRO \
                   + datetime.datetime.now().microsecond
 
         return int(current)
 
-    def lap_ns(self):
+    def lap_ns(self) -> int:
         """Return nanoseconds since this instance was created.
 
-        :return: int"""
+        Returns:
+            Nanoseconds since this instance was created
+        """
         return time.perf_counter_ns() - self.start_moment_ns
 
-    def lap(self):
+    def lap(self) -> float:
         """Return seconds since this instance was created.
 
-        :return: float"""
+        Includes decimal to nanosecond resolution, however, the division of nanoseconds is
+        unreliable. Use ``lap_ns`` if high precision is required.
+
+        Returns:
+            Seconds since this instance was created (to nanoseconds)
+        """
         return self.lap_ns() / Timer.SEC_TO_NANO
 
-    def interval(self):
+    def interval(self) -> bool:
         """Return True if we have exceeded the interval since we started or
-        last called interval().
+        last called ``interval``.
 
-        :return: bool"""
+        Returns:
+            True if we have exceeded ``interval`` since we started or last called ``interval``,
+                False otherwise.
+        """
 
         # Get the current lap time
         lap = self.lap_ns()  # Nanoseconds

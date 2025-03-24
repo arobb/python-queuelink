@@ -20,8 +20,14 @@ from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
 from .metrics import Metrics
 from .common import DIRECTION
-from .common import PRIORITY_QUEUES, SIMPLE_QUEUES, UNION_SUPPORTED_QUEUES
 from .common import new_id, is_threaded, safe_get
+from .common import (
+    PRIORITY_QUEUES,
+    SIMPLE_QUEUES,
+    UNION_MULTIPROCESSING_QUEUES,
+    UNION_SUPPORTED_EVENTS,
+    UNION_SUPPORTED_LOCKS,
+    UNION_SUPPORTED_QUEUES)
 
 
 def validate_direction(func):
@@ -118,14 +124,15 @@ class QueueLink(ClassTemplate):
                  link_timeout: float=0.01):
         """Manages the pull/push with queues
 
-        :param UNION_SUPPORTED_QUEUES source: Queue to act as the source
-        :param UNION_SUPPORTED_QUEUES destination: Queue or list of queues to act as a destination
-        :param str name: Appended to class name in log records (``cl.name``)
-        :param str log_name: Appended to class name.name (``cl.name.log_name``)
-            or just class name if ``name`` is not provided
-        :param str start_method: For multi-process use: fork, spawn or forkserver
-        :param bool thread_only: Only use threads, not separate processes, for links
-        :param float link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.01 sec
+        Args:
+            source: Queue to act as the source
+            destination: Queue or list of queues to act as a destination
+            name: Appended to class name in log records (``cl.name``)
+            log_name: Appended to class name.name (``cl.name.log_name``)
+                or just class name if ``name`` is not provided
+            start_method: For multiprocess use: fork, spawn or forkserver
+            thread_only: Only use threads, not separate processes, for links
+            link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.01 sec
         """
         # Unique ID
         # Not used for cryptographic purposes, so excluding from Bandit
@@ -193,7 +200,7 @@ class QueueLink(ClassTemplate):
     def __del__(self):
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         """Remove managed objects started within QueueLink"""
 
         # Make sure processes are stopped
@@ -232,38 +239,46 @@ class QueueLink(ClassTemplate):
         self._log = logging.getLogger(name)
         self.add_logging_handler(logging.NullHandler())
 
-    def Event(self, *args, **kwargs):  # pylint: disable=invalid-name
+    def Event(self, *args, **kwargs) -> UNION_SUPPORTED_EVENTS:  # pylint: disable=invalid-name
         """Create a context-appropriate Event"""
         return self.multiprocess_ctx.Event(*args, **kwargs)
 
-    def Lock(self, *args, **kwargs):  # pylint: disable=invalid-name
+    def Lock(self, *args, **kwargs) -> UNION_SUPPORTED_LOCKS:  # pylint: disable=invalid-name
         """Create a context-appropriate Lock"""
         return self.multiprocess_ctx.Lock(*args, **kwargs)
 
-    def Process(self, *args, **kwargs):  # pylint: disable=invalid-name
+    def Process(self, *args, **kwargs) -> multiprocessing.Process:  # pylint: disable=invalid-name
         """Create a context-appropriate Process"""
         return self.multiprocess_ctx.Process(*args, **kwargs)
 
-    def Queue(self, *args, **kwargs):  # pylint: disable=invalid-name
+    def Queue(self, *args, **kwargs) -> UNION_MULTIPROCESSING_QUEUES:  # pylint: disable=invalid-name
         """Create a context-appropriate Queue"""
         return self.multiprocess_ctx.Queue(*args, **kwargs)
 
-    def stop(self):
+    def stop(self) -> None:
         """Use to stop somewhat gracefully"""
         self._stop_publishers()
 
     @staticmethod
-    def _publisher(stop_event,
-                   source_id,
-                   source_queue,
-                   dest_queues_dict,
-                   timeout,
+    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,
+                   source_id: str,
+                   source_queue: UNION_SUPPORTED_QUEUES,
+                   dest_queues_dict: dict[str, UNION_SUPPORTED_QUEUES],
+                   timeout: float,
                    metrics_queue: UNION_SUPPORTED_QUEUES,
                    metric_interval: int=100,
-                   name=None):
+                   name: str=None) -> None:
         """Move messages from the source queue to the destination queue
 
-        :param timeout=0.1; 100ms responsive-ish to shutdown and minimizes thrashing
+        Args:
+            stop_event: Used to determine whether to stop the process
+            source_id: Source queue ID
+            source_queue: Source queue object
+            dest_queues_dict: Dictionary holding a set of destination queues
+            timeout: How long to wait for a message
+            metrics_queue: Where to place metric instances
+            metric_interval: How many messages between metric emissions
+            name: Name to use in logging
         """
         # Make a helpful logger name
         if name is None:
@@ -327,14 +342,14 @@ class QueueLink(ClassTemplate):
                           name if name else source_id)
                 return
 
-    def get_queue(self, queue_id: Union[str, int]):
-        """Retrieve a client's Queue proxy object
+    def get_queue(self, queue_id: Union[str, int]) -> UNION_SUPPORTED_QUEUES:
+        """Retrieve a client's queue reference
 
         Args:
-            queue_id (string): ID of the client
+            queue_id: ID of the queue reference
 
         Returns:
-            QueueProxy
+            Reference to a queue instance
         """
         if queue_id in self.client_queues_source:
             queue_list = self.client_queues_source
@@ -344,25 +359,26 @@ class QueueLink(ClassTemplate):
         return queue_list[text(queue_id)]
 
     @validate_direction
-    def register_queue(self, queue_proxy, direction: DIRECTION) -> str:
-        """Register a multiprocessing.JoinableQueue to this link
+    def register_queue(self,
+                       queue_proxy: UNION_SUPPORTED_QUEUES,
+                       direction: DIRECTION) -> str:
+        """Register a queue to this link
 
-        For a new "source" queue, a publishing process will be created to send
+        For a new ``FROM`` (source) queue, a publishing process will be created to send
         all additions down to destination queues.
 
-        For a new "destination" queue, all new additions to "source" queues
+        For a new ``TO`` (destination) queue, all new additions to source queues
         will be added to this queue.
 
-        Returns the numeric ID for the new client, which must be used in all
+        Returns the numeric ID for the queue reference, which must be used in all
         future interactions.
 
         Args:
-            queue_proxy (QueueProxy): Proxy object to a JoinableQueue
-            direction (DIRECTION): FROM or TO
+            queue_proxy: Queue object to register
+            direction: FROM or TO
 
         Returns:
-            string. The client's ID for access to this queue
-
+            The client's ID for access to this queue
         """
         # Calculate the opposite direction
         op_direction = DIRECTION.TO if direction == DIRECTION.FROM else DIRECTION.FROM
@@ -438,10 +454,10 @@ class QueueLink(ClassTemplate):
         """Register a source queue
 
         Args:
-            queue_proxy (QueueProxy): Queue or proxy object to a queue
+            queue_proxy: Queue or proxy object to a queue
 
         Returns:
-            string. The client's ID for access to this queue
+            The client's ID for access to this queue
         """
         return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.FROM)
 
@@ -449,10 +465,10 @@ class QueueLink(ClassTemplate):
         """Register a destination queue
 
         Args:
-            queue_proxy (QueueProxy): Queue or proxy object to a queue
+            queue_proxy: Queue or proxy object to a queue
 
         Returns:
-            string. The client's ID for access to this queue
+            The client's ID for access to this queue
         """
         return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.TO)
 
@@ -515,8 +531,12 @@ class QueueLink(ClassTemplate):
         self.started.set()
         self.client_pair_publishers[text(source_id)] = proc
 
-    def _stop_publisher(self, source_id: str):
-        """Stop a current publisher process"""
+    def _stop_publisher(self, source_id: str) -> None:
+        """Stop a current publisher process
+
+        Args:
+            source_id: ID of the source queue
+        """
         self._log.debug("Stopping publisher %s", source_id)
         stop_event = self.publisher_stops[text(source_id)]
         stop_event.set()
@@ -540,25 +560,24 @@ class QueueLink(ClassTemplate):
         # Flip the "stop" event back to normal
         stop_event.clear()
 
-    def _stop_publishers(self):
-        """Stop current publisher processes"""
+    def _stop_publishers(self) -> None:
+        """Stop all current publisher processes"""
         self._log.debug("Stopping any current publishers")
         for source_id in self.client_queues_source:
             self._stop_publisher(source_id)
 
     @validate_direction
-    def unregister_queue(self, queue_id: Union[str, int], direction: DIRECTION):
-        """Detach a Queue proxy from this _QueueHandleAdapterBase
+    def unregister_queue(self, queue_id: Union[str, int], direction: DIRECTION) -> str:
+        """Detach a queue from this link
 
         Returns the clientId that was removed
 
         Args:
-            queue_id (string): ID of the client
-            direction (DIRECTION): source or destination
+            queue_id: ID of the client
+            direction: source or destination
 
         Returns:
-            string. ID of the client queue
-
+            ID of the client queue
         """
         with self.queues_lock:
             queue_list = getattr(self, f'client_queues_{direction}')
@@ -585,18 +604,16 @@ class QueueLink(ClassTemplate):
 
         return text(queue_id)
 
-    def is_empty(self, queue_id:str =None):
-        """Checks whether the primary Queue or any clients' Queues are empty
-
-        Returns True ONLY if ALL queues are empty if queue_id is None
-        Returns True ONLY if both main queue and specified client queue are
-            empty when queue_id is provided
+    def is_empty(self, queue_id: Union[str, None]=None) -> bool:
+        """Checks whether the source or destination queues are empty
 
         Args:
-            queue_id (string): ID of the client
+            queue_id: (optional) ID of the client
 
         Returns:
-            bool
+            If queue_id is None, returns True ONLY if ALL queues are empty.
+            If queue_id is provided, True ONLY if both main queue and specified client queue are
+            empty.
         """
         with self.queues_lock:
             if queue_id is not None:
@@ -630,11 +647,14 @@ class QueueLink(ClassTemplate):
             self._log.debug("Reporting queue link empty: %s", empty)
             return empty
 
-    def is_alive(self):
+    def is_alive(self) -> bool:
         """Whether all of the publishers are alive
 
-        :raises ProcessNotStarted if we've never started
-        :returns bool
+        Returns:
+            False if any publisher has stopped
+
+        Raises:
+            ProcessNotStarted if we've never started a publisher
         """
         alive = True
 

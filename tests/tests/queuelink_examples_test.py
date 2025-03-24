@@ -94,7 +94,7 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         manager.shutdown()
         self.assertEqual(text_in, text_out, 'Text is inconsistent')
 
-    def test_reader(self, close_fds):
+    def test_reader(self):
         # Text to send
         text_in = "a😂" * 10
 

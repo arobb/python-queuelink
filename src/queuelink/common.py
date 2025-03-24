@@ -7,11 +7,13 @@ import time
 from enum import Enum
 from queue import Empty
 from threading import Event as t_Event
+from threading import Lock as t_Lock
 from typing import List, Union
 
 # Multiprocessing imports
 import multiprocessing
 from multiprocessing import Event as mp_Event
+from multiprocessing import Lock as mp_Lock
 from multiprocessing import queues as mp_queue_classes
 from multiprocessing.managers import BaseProxy
 
@@ -19,12 +21,26 @@ from multiprocessing.managers import BaseProxy
 from .timer import Timer
 
 class DIRECTION(Enum):
-    """Directions (from source/to destination)"""
+    """Directions enum (from source/to destination)"""
     def __str__(self):
         return str(self.value)
 
     FROM = 'source'
     TO = 'destination'
+
+# Supported events
+UNION_SUPPORTED_EVENTS = Union[
+    t_Event,
+    mp_Event,
+    BaseProxy
+]
+
+# Supported locks
+UNION_SUPPORTED_LOCKS = Union[
+    t_Lock,
+    mp_Lock,
+    BaseProxy
+]
 
 # Ways to start a process
 PROC_START_METHODS = ['fork', 'forkserver', 'spawn']
@@ -61,23 +77,34 @@ SIMPLE_QUEUES = [
     mp_queue_classes.SimpleQueue
 ]
 
+UNION_MULTIPROCESSING_QUEUES = Union[
+    multiprocessing.queues.Queue,
+    multiprocessing.queues.JoinableQueue,
+    multiprocessing.queues.SimpleQueue
+]
+
 # Union type for typing support
 # pylint: disable=invalid-name
-UNION_SUPPORTED_QUEUES = Union[queue.Queue,
-                               queue.LifoQueue,
-                               queue.PriorityQueue,
-                               queue.SimpleQueue,
-                               multiprocessing.queues.Queue,
-                               multiprocessing.queues.JoinableQueue,
-                               multiprocessing.queues.SimpleQueue,
-                               BaseProxy]
+UNION_SUPPORTED_QUEUES = Union[
+    queue.Queue,
+    queue.LifoQueue,
+    queue.PriorityQueue,
+    queue.SimpleQueue,
+    multiprocessing.queues.Queue,
+    multiprocessing.queues.JoinableQueue,
+    multiprocessing.queues.SimpleQueue,
+    BaseProxy
+]
 
 
-def is_threaded(queue_list: Union[List, UNION_SUPPORTED_QUEUES]):
+def is_threaded(queue_list: Union[List, UNION_SUPPORTED_QUEUES]) -> bool:
     """Check whether one or more queues are threaded
 
-    :param queue: Any queue or list of queues (any type)
-    :return bool
+    Args:
+         queue_list: Any queue or list of queues (any type)
+
+    Returns:
+        True if any queue in the given list is threaded.
     """
     if not isinstance(queue_list, list):
         queue_list = [queue_list]
@@ -88,8 +115,12 @@ def is_threaded(queue_list: Union[List, UNION_SUPPORTED_QUEUES]):
 
     return False
 
-def new_id():
-    """Create a reasonably unique ID string."""
+def new_id() -> str:
+    """Create a reasonably unique ID string.
+
+    Returns:
+        A 6-character unique ID.
+    """
     return ''.join([random.choice(  # nosec
                '0123456789ABCDEF') for x in range(6)])
 
@@ -97,25 +128,37 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
              block: bool = True,
              timeout: float = 0,
              stop_event: Union[t_Event, mp_Event] = None,
-             cycle_time: float = 0.005):
-    """Queue get implementation that implements partial timeout for all Queue types including
+             cycle_time: float = 0.005) -> any:
+    """Queue ``get`` implementation that implements partial timeout for all Queue types including
     SimpleQueues.
 
     CAUTION: Can deadlock if a SimpleQueue is read by multiple consumers.
 
-    :param queue_obj: Any queue object
-    :param block: Block until queue has an element to return (default True)
-    :param timeout: Timeout in seconds; if block is True, raise Empty after this duration
-    :param stop_event: Event to force stop
-    :param cycle_time: Cycle time in seconds of blocking logic for SimpleQueues
+    Args:
+        queue_obj: Any queue object
+        block: Block until queue has an element to return (default True)
+        timeout: Timeout in seconds; if block is True, raise Empty after this duration
+        stop_event: Event to force stop
+        cycle_time: Cycle time in seconds of blocking logic for SimpleQueues
 
-    :raises queue.Empty
+    Returns:
+        Returns a queue element or None
+
+    Raises:
+        queue.Empty
     """
     timer = Timer(interval=timeout)
 
     # Handle cycle time with the stop_event if present
     def wait(time_out: float=0):
-        """Return False when timeout expires or True if the stop_event is set"""
+        """Return False when timeout expires or True if the stop_event is set
+
+        Args:
+            time_out: Timeout in seconds
+
+        Returns:
+            False when timeout expires or True if the stop_event is set
+        """
         if not stop_event:
             time.sleep(time_out)
             return False

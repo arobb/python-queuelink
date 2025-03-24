@@ -4,17 +4,25 @@ thread-safe queues"""
 from __future__ import unicode_literals
 
 import codecs
+import io
 import logging
 import multiprocessing  # For comparisons
 
-from .contentwrapper import get_len
-from .contentwrapper import ContentWrapper
-from .contentwrapper import WRAP_WHEN, conditional_wrap
+from .queue_handle_adapter_base import MessageCounter
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
-from .common import UNION_SUPPORTED_QUEUES, DIRECTION
+from .contentwrapper import (
+    get_len,
+    ContentWrapper,
+    WRAP_WHEN,
+    conditional_wrap)
+from .common import (
+    UNION_SUPPORTED_EVENTS,
+    UNION_SUPPORTED_LOCKS,
+    UNION_SUPPORTED_QUEUES,
+    DIRECTION)
 
 def connection_readline(self):
-    """Adds a readline method for multiprocessing.connection.Connection objects
+    """A readline method for multiprocessing.connection.Connection objects
 
     Also requires:
         An Event be applied as stop_event to know when to stop.
@@ -46,8 +54,17 @@ def connection_readline(self):
             # Some other OS error
             raise e
 
-def add_methods_to_connections(conn, trusted):
-    """Attach a new method and attributes to an existing object."""
+def add_methods_to_connections(conn: multiprocessing.connection.Connection,
+                               trusted: bool) -> multiprocessing.connection.Connection:
+    """Attach a new method and attributes to an existing object.
+
+    Args:
+        conn: A multiprocessing connection object.
+        trusted: Whether to 'trust' the connection.
+
+    Returns:
+        The ``conn`` object with added methods and attributes.
+    """
     if isinstance(conn, multiprocessing.connection.Connection):
         # Use the "descriptor protocol" to bind the method to an existing object
         # https://docs.python.org/3.13/howto/descriptor.html
@@ -70,7 +87,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     def __init__(self,
                  queue: UNION_SUPPORTED_QUEUES,
                  *,  # End of positional arguments
-                 handle=None,
+                 handle: io.IOBase=None,
                  name: str=None,
                  log_name: str=None,
                  start_method: str=None,
@@ -84,14 +101,17 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         Launches a new thread or process to perform the reading/putting. Prefers a new process,
         but if the provided queue is from `queue` will switch to using a thread.
 
-        :param queue: Queue to write to
-        :param handle: An open handle or pipe to consume from
-        :param name: Optional name for this reader
-        :param log_name: Optional name for this reader in log lines
-        :param thread_only: Force the adapter to use a thread rather than process
-        :param trusted: Whether to trust Connection objects; True uses .send/.recv, False send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
-        :param wrap_when: When to use a ContentWrapper to encapsulate records
-        :param wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper; only applies when wrap_when is WRAP_WHEN.AUTO
+        Args:
+            queue: Queue to write to
+            handle: An open handle or pipe to consume from
+            name: Optional name for this reader
+            log_name: Optional name for this reader in log lines
+            thread_only: Force the adapter to use a thread rather than process
+            trusted: Whether to trust Connection objects; True uses .send/.recv, False
+                send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
+            wrap_when: When to use a ContentWrapper to encapsulate records
+            wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper;
+                only applies when wrap_when is WRAP_WHEN.AUTO
         """
         # A multiprocessing.Pipe (Connection) does not have a readline method
         # This checks the type. If not a Connection instance, it returns unchanged
@@ -120,29 +140,29 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     # pylint: disable=arguments-differ
     @staticmethod
     def queue_handle_adapter(*,  # All named parameters are required keyword arguments
-                             name,
-                             handle,
-                             queue,
-                             queue_lock,
-                             stop_event,
-                             messages_processed,
-                             trusted,
-                             wrap_when,
-                             wrap_threshold):
+                             name: str,
+                             handle: io.IOBase,
+                             queue: UNION_SUPPORTED_QUEUES,
+                             queue_lock: UNION_SUPPORTED_LOCKS,
+                             stop_event: UNION_SUPPORTED_EVENTS,
+                             messages_processed: MessageCounter,
+                             trusted: bool,
+                             wrap_when: WRAP_WHEN,
+                             wrap_threshold: int):
         """Copy lines from a given pipe handle into a local threading.Queue
 
         Runs in a separate process, started by __init__. Closes pipe when done
         reading.
 
         Args:
-            name (string): Name of the pipe we will read from
-            handle (pipe): Pipe to read from
-            queue (Queue): Queue to write to
-            queue_lock (Lock): Lock used to indicate a write in progress
-            stop_event (Event): Used to determine whether to stop the process
-            trusted (bool): Whether to trust Connection objects
-            wrap_when (WRAP_WHEN): When to use a ContentWrapper
-            wrap_threshold (int): Size limit for a line before it is wrapped in a ContentWrapper
+            name: Name to use in logging
+            handle: Handle/pipe/path to read from
+            queue: Queue to write to
+            queue_lock: Lock used to indicate a write in progress
+            stop_event: Used to determine whether to stop the process
+            trusted: Whether to trust Connection objects
+            wrap_when: When to use a ContentWrapper
+            wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper
         """
         logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)

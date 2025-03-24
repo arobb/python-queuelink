@@ -10,6 +10,7 @@ import tempfile
 from codecs import getreader
 from enum import Enum, auto
 from io import IOBase as file
+from typing import Union
 
 from kitchen.text.converters import to_bytes
 from kitchenpatch import getwriter
@@ -18,8 +19,15 @@ from .classtemplate import ClassTemplate
 from .timer import Timer
 
 
-def get_len(obj) -> int:
-    """Use a consistent length calculation"""
+def get_len(obj: any) -> int:
+    """Calculate the byte length of a given object.
+
+    Args:
+        obj: The object to calculate the byte length for.
+
+    Returns:
+        The byte length of the given object.
+    """
     if isinstance(obj, str):
         subject_byte_count = len(obj.encode('utf8'))
     else:
@@ -28,13 +36,22 @@ def get_len(obj) -> int:
     return subject_byte_count
 
 
-def of_bytes_length(subject, length, round_func_name='floor'):
-    """
-    Calculates the length of "subject" in bytes, then generates a longer object that comes
-    in at or under "length".
+def of_bytes_length(subject: str, length: int, round_func_name='floor') -> str:
+    """Generate an object of the given length out of the subject.
 
-    Set round_func_name to "ceil" to generate a longer string that comes in at or above
-    "length".
+    Calculates the length of "subject" in bytes, then generates a longer string as multiples
+    of ``subject`` that comes in at or under ``length``. See next note for "at or above".
+
+    Set ``round_func_name`` to ``ceil`` to generate a longer string that comes in at or above
+    ``length``.
+
+    Args:
+        subject: The baseline object to multiply to create the output object
+        length: The length to generate.
+        round_func_name: The name of the function used to round the length.
+
+    Returns:
+        An extended string based on the ``subject``.
     """
     subject_byte_count = get_len(subject)
 
@@ -274,14 +291,22 @@ class ContentWrapper(ClassTemplate):
             self.location_name = None
 
 
-def conditional_wrap(content,
+def conditional_wrap(content: any,
                      wrap_when: WRAP_WHEN=WRAP_WHEN.AUTO,
-                     wrap_threshold: int=ContentWrapper.THRESHOLD):
+                     wrap_threshold: int=ContentWrapper.THRESHOLD) -> Union[any, ContentWrapper]:
     """Method to wrap content only if it meets the given conditions.
 
     Typically to keep values that would be stored in memory from being wrapped.
 
     Passes wrap_threshold as the file threshold into the ContentWrapper instance.
+
+    Args:
+        content: Object to be conditionally wrapped.
+        wrap_when: Condition when the wrapping should occur.
+        wrap_threshold: Size threshold over which the wrapping should occur.
+
+    Returns:
+        The wrapped content.
     """
 
     # Never wrap

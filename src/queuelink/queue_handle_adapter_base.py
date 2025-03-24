@@ -2,12 +2,14 @@
 """Parent class for QueueHandleAdapterReader and QueuePipeAdapterWriter"""
 from __future__ import unicode_literals
 
+import io
 import random
 import tempfile  # For comparisons
 import threading
 
-from threading import Thread  # For non-multi-processing queues
 from pickle import PicklingError  # nosec
+from threading import Thread  # For non-multi-processing queues
+from typing import Union
 
 # Multiprocessing imports
 import multiprocessing
@@ -18,6 +20,7 @@ from .classtemplate import ClassTemplate
 from .exceptionhandler import HandleAlreadySet
 from .common import DIRECTION
 from .common import is_threaded
+from .common import UNION_SUPPORTED_EVENTS, UNION_SUPPORTED_LOCKS, UNION_SUPPORTED_QUEUES
 
 
 class MessageCounter(object):
@@ -28,7 +31,7 @@ class MessageCounter(object):
         self.counter = threading.local() if thread_only else multiprocessing.Value('Q')
         self.counter.value = 0
 
-    def increment(self):
+    def increment(self) -> None:
         """Increment the message counter."""
         self.counter.value += 1
 
@@ -40,28 +43,32 @@ class MessageCounter(object):
 
 
 class _QueueHandleAdapterBase(ClassTemplate):
+    """QueueHandleAdapter abstract implementation"""
     def __init__(self,
-                 queue,
+                 queue: UNION_SUPPORTED_QUEUES,
                  *,  # End of positional arguments
                  subclass_name: str,
                  queue_direction: DIRECTION,
-                 name:str =None,
-                 handle=None,
-                 log_name:str =None,
+                 name: str=None,
+                 handle: io.IOBase=None,
+                 log_name: str=None,
                  start_method: str=None,
                  thread_only: bool=False,
                  **kwargs):
-        """QueuePipeAdapter abstract implementation
-
+        """
         Args:
-             queue_direction (DIRECTION): Indicate direction relative to pipe;
+            queue: The queue to attach
+            subclass_name: Name of the concrete class implementation
+            queue_direction: Indicate direction relative to pipe;
                 e.g. from stdout, the flow is (PIPE => QUEUE)
                 => CLIENT QUEUES (from pipe/queue into client queues), and
                 therefore queue_direction would be "source".
-             trusted: Whether to trust Connection objects; True uses .send/.recv,
-                False send_bytes/recv_bytes
+            name: Name to use in logging for this instance
+            handle: The IO handle
+            log_name: Additional name to use in logging for this instance
+            start_method: Name of the multiprocessing start method to use (fork, forkserver, spawn)
+            thread_only: True to keep processing in a single thread using threading
         """
-
         # Unique ID for this PrPipe
         # Not used for cryptographic purposes, so excluding from Bandit
         self.id = \
@@ -128,12 +135,11 @@ class _QueueHandleAdapterBase(ClassTemplate):
         """
         raise PicklingError("Don't pickle me!")
 
-    def set_handle(self, handle):
-        """Set the pipe handle to use
+    def set_handle(self, handle: Union[io.IOBase, str]) -> None:
+        """Set the handle to read from or write to.
 
         Args:
-            handle (io.IOBase): An open handle (subclasses of file,
-                IO.IOBase)
+            handle: An open handle (subclasses of file, IO.IOBase)
 
         Raises:
             HandleAlreadySet
@@ -186,17 +192,17 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
     @staticmethod
     def queue_handle_adapter(*,  # All named parameters are required keyword arguments
-                             name,
-                             handle,
-                             queue,
-                             queue_lock,
-                             stop_event,
-                             messages_processed,
-                             trusted,
-                             **kwargs):
+                             name: str,
+                             handle: io.IOBase,
+                             queue: UNION_SUPPORTED_QUEUES,
+                             queue_lock: UNION_SUPPORTED_LOCKS,
+                             stop_event: UNION_SUPPORTED_EVENTS,
+                             messages_processed: MessageCounter,
+                             trusted: bool,
+                             **kwargs) -> None:
         """Override me in a subclass to do something useful"""
 
-    def _stop(self):
+    def _stop(self) -> None:
         """Internal stop method"""
         # Mark that we have been asked to stop
         self.stopped.set()
@@ -212,7 +218,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
             else:
                 break
 
-    def close(self):
+    def close(self) -> None:
         """Stop the adapter and queue link and clean up.
 
         Does not force a drain of the queues.
@@ -235,23 +241,22 @@ class _QueueHandleAdapterBase(ClassTemplate):
             if hasattr(self, attr):
                 setattr(self, attr, None)
 
-    def is_alive(self):
-        """Check whether the thread managing the pipe > Queue movement
-        is still active
+    def is_alive(self) -> bool:
+        """Check whether the thread/process managing the movement is still active
 
         Returns:
-            bool
+            True if the adapter thread/process is still running, False otherwise.
         """
         return self.process.is_alive()
 
-    def is_drained(self):
+    def is_drained(self) -> bool:
         """Check alive and empty
 
         Attempts clean semantic response to "is there, or will there be, data
         to read?"
 
         Returns:
-            bool: True if fully drained, False if not
+            True if fully drained, False if not
         """
         drained = True
 
@@ -265,6 +270,10 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         return drained
 
-    def get_messages_processed(self):
-        """Return the number of messages moved by this adapter."""
+    def get_messages_processed(self) -> int:
+        """Return the number of messages moved by this adapter
+
+        Returns:
+            The number of messages processed by this adapter.
+        """
         return self.messages_processed.value

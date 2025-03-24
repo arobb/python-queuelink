@@ -3,6 +3,7 @@
 contents to a pipe"""
 from __future__ import unicode_literals
 
+import io
 import logging
 
 from queue import Empty
@@ -10,10 +11,15 @@ from os import PathLike
 from typing import Union, IO
 
 from .contentwrapper import ContentWrapper
+from .queue_handle_adapter_base import MessageCounter
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
-from .common import UNION_SUPPORTED_QUEUES, DIRECTION
-from .common import safe_get
 from .timer import Timer
+from .common import (
+    safe_get,
+    UNION_SUPPORTED_EVENTS,
+    UNION_SUPPORTED_LOCKS,
+    UNION_SUPPORTED_QUEUES,
+    DIRECTION)
 
 
 # Private class only intended to be used by ProcessRunner
@@ -54,13 +60,13 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
 
     @staticmethod
     def queue_handle_adapter(*,  # All named parameters are required keyword arguments
-                             name,
-                             handle,
-                             queue,
-                             queue_lock,
-                             stop_event,
-                             messages_processed,
-                             trusted,
+                             name: str,
+                             handle: io.IOBase,
+                             queue: UNION_SUPPORTED_QUEUES,
+                             queue_lock: UNION_SUPPORTED_LOCKS,
+                             stop_event: UNION_SUPPORTED_EVENTS,
+                             messages_processed: MessageCounter,
+                             trusted: bool,
                              **kwargs):
         """Copy lines from a local multiprocessing.JoinableQueue into a pipe
 
@@ -68,11 +74,12 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
         pipe when done writing.
 
         Args:
-            name (string): Name of the pipe we will write to
-            handle (pipe): Pipe to write to
-            queue (Queue): Queue to read from
-            queue_lock (Lock): Lock used to indicate a write in progress
-            stop_event (Event): Used to determine whether to stop the process
+            name: Name to use in logging
+            handle: Handle/pipe/path to write to
+            queue: Queue to write to
+            queue_lock: Lock used to indicate a write in progress
+            stop_event: Used to determine whether to stop the process
+            trusted: Whether to trust Connection objects
         """
         def open_location(location: Union[str, PathLike]):
             """Open a location string/Path and return a normal IO handle."""

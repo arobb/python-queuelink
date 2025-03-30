@@ -156,6 +156,7 @@ class ContentWrapper(ClassTemplate):
                 stopwatch = Timer()
                 writer.write(val)
                 writer.flush()
+                os.fsync(writer.fileno())
                 lap = stopwatch.lap()
                 self._log.info("Finished writing value into buffer file in "
                                "%.1f seconds", lap)

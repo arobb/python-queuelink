@@ -158,7 +158,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # If the handle is a BufferedReader we have to stay in the same process
         if isinstance(handle, (_IOBase, tempfile._TemporaryFileWrapper)) and not self.thread_only:
-            self._log.warning('Adapter process %s will only be threaded as we cannot'
+            self._log.warning('Adapter process %s will only be threaded as we cannot '
                               'send an open handle to another process.', process_name)
             self.thread_only = True
 

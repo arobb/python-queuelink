@@ -4,9 +4,10 @@ thread-safe queues"""
 from __future__ import unicode_literals
 
 import codecs
-import io
 import logging
 import multiprocessing  # For comparisons
+
+from typing import get_args
 
 from .queue_handle_adapter_base import MessageCounter
 from .queue_handle_adapter_base import _QueueHandleAdapterBase
@@ -19,7 +20,9 @@ from .common import (
     UNION_SUPPORTED_EVENTS,
     UNION_SUPPORTED_LOCKS,
     UNION_SUPPORTED_QUEUES,
-    DIRECTION)
+    DIRECTION,
+    UNION_SUPPORTED_IO_TYPES,
+    UNION_SUPPORTED_PATH_TYPES)
 
 def connection_readline(self):
     """A readline method for multiprocessing.connection.Connection objects
@@ -87,7 +90,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     def __init__(self,
                  queue: UNION_SUPPORTED_QUEUES,
                  *,  # End of positional arguments
-                 handle: io.IOBase=None,
+                 handle: UNION_SUPPORTED_IO_TYPES=None,
                  name: str=None,
                  log_name: str=None,
                  start_method: str=None,
@@ -106,6 +109,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             handle: An open handle or pipe to consume from
             name: Optional name for this reader
             log_name: Optional name for this reader in log lines
+            start_method: Explicit multiprocessing start method to use
             thread_only: Force the adapter to use a thread rather than process
             trusted: Whether to trust Connection objects; True uses .send/.recv, False
                 send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
@@ -118,7 +122,10 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         handle = add_methods_to_connections(conn=handle, trusted=trusted)
 
         # Check if we can use the pipe directly
-        if not hasattr(handle, 'readline'):
+        # IO type that does not have readline, and is not a file path
+        # get_args syntax used for Python 3.8-3.12 compatibility https://stackoverflow.com/a/64643971
+        if not hasattr(handle, 'readline') and \
+          not isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
             original_handle = handle
             handle = codecs.getreader('utf-8')(original_handle)
 
@@ -141,7 +148,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
     @staticmethod
     def queue_handle_adapter(*,  # All named parameters are required keyword arguments
                              name: str,
-                             handle: io.IOBase,
+                             handle: UNION_SUPPORTED_IO_TYPES,
                              queue: UNION_SUPPORTED_QUEUES,
                              queue_lock: UNION_SUPPORTED_LOCKS,
                              stop_event: UNION_SUPPORTED_EVENTS,
@@ -171,6 +178,13 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         # Add readline and flush again; needed for spawn and forkserver start_methods
         handle = add_methods_to_connections(conn=handle, trusted=trusted)
 
+        # Open the handle is it is a path
+        # get_args syntax used for Python 3.8-3.12 compatibility https://stackoverflow.com/a/64643971
+        handle_name = None
+        if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
+            handle_name = handle
+            handle = open(handle_name, 'r')
+
         # Calculate the threshold to use
         wrap_threshold = ContentWrapper.THRESHOLD if wrap_threshold is None else wrap_threshold
 
@@ -189,8 +203,14 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
 
             # https://stackoverflow.com/a/2813530
             while True:
-                line = handle.readline()
-                if line is None:
+                try:
+                    line = handle.readline()
+                except (ValueError, EOFError):
+                    log.info('Unexpected EOF')
+                    break
+
+                # Empty line should signify end of file
+                if line is None or line == '' or len(line) == 0:
                     break
 
                 # Wrap in a ContentWrapper
@@ -203,16 +223,24 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                     if isinstance(content, ContentWrapper):  # Wrapped Connections return a CW
                         log.debug('Content is in a ContentWrapper')
 
-                    queue.put(content)
-                    log.debug('Sent to queue')
+                    try:
+                        queue.put(content)
+                        log.debug('Sent to queue')
+                    except EOFError:
+                        log.info('Unexpected destination queue EOF')
+                        break
 
                     # Increment counter
                     messages_processed.increment()
 
                 # Check whether we should stop now
                 if stop_event.is_set():
-                    log.info('Asked to stop')
+                    log.info('Reader asked to stop')
                     break
+
+            # Close the handle if we opened it
+            if handle_name:
+                handle.close()
 
             # Clean up references
             # Prevent "UserWarning: ResourceTracker called reentrantly for resource cleanup,
@@ -223,4 +251,4 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             handle.stop_event = None
             handle = None
 
-        log.info('Sub-process complete')
+        log.info('Reader sub-process complete')

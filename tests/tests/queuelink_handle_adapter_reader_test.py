@@ -5,6 +5,7 @@ import multiprocessing
 import queue
 import os
 import subprocess
+import sys
 import unittest
 
 from typing import Union
@@ -16,7 +17,6 @@ from subprocess import PIPE
 
 from tests.tests import context
 from queuelink.common import PROC_START_METHODS, QUEUE_TYPE_LIST
-from queuelink import QueueLink
 from queuelink import QueueHandleAdapterReader
 from queuelink import ContentWrapper, WRAP_WHEN
 from queuelink import safe_get
@@ -31,7 +31,10 @@ CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
 @parameterized_class(('queue_type', 'start_method'), CARTESIAN_QUEUE_TYPES_START_LIST)
 class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
     def setUp(self):
-        self.timeout = 60  # Some spawn instances needed a little more time
+        if sys.version_info[0] == 3 and sys.version_info[1] == 12:
+            self.timeout = 60  # Some instances needed a little more time in 3.12
+        else:
+            self.timeout = 10
 
         content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
 

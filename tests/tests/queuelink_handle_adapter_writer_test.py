@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import queue
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -28,7 +29,10 @@ CARTESIAN_QUEUE_TYPES_START_LIST = itertools.product(QUEUE_TYPE_LIST,
                      CARTESIAN_QUEUE_TYPES_START_LIST)
 class QueueLinkHandleAdapterWriterTestCase(unittest.TestCase):
     def setUp(self):
-        self.timeout = 10  # Some spawn instances needed a little more time
+        if sys.version_info[0] == 3 and sys.version_info[1] == 12:
+            self.timeout = 60  # Some instances needed a little more time in 3.12
+        else:
+            self.timeout = 10
 
         content_dir = os.path.join(os.path.dirname(__file__), '..', 'content')
 

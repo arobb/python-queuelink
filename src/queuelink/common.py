@@ -5,10 +5,11 @@ import random
 import time
 
 from enum import Enum
+from os import PathLike
 from queue import Empty
 from threading import Event as t_Event
 from threading import Lock as t_Lock
-from typing import List, Union
+from typing import IO, List, Union
 
 # Multiprocessing imports
 import multiprocessing
@@ -94,6 +95,21 @@ UNION_SUPPORTED_QUEUES = Union[
     multiprocessing.queues.JoinableQueue,
     multiprocessing.queues.SimpleQueue,
     BaseProxy
+]
+
+# Union type for IO (reader/writer)
+# pylint: disable=invalid-name
+UNION_SUPPORTED_IO_TYPES = Union[
+    IO,
+    str,
+    PathLike
+]
+
+# Union type for file pointer types (reader/writer)
+# pylint: disable=invalid-name
+UNION_SUPPORTED_PATH_TYPES = Union[
+    str,
+    PathLike
 ]
 
 
@@ -185,6 +201,7 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
             if hasattr(queue_obj, "get_nowait"):
                 try:
                     return queue_obj.get_nowait()
+
                 except Empty:
                     if not block:
                         raise Empty
@@ -193,6 +210,9 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
                         raise Empty
 
                     continue
+
+                except (EOFError, BrokenPipeError):
+                    raise Empty
 
             # SimpleQueues don't have a get_nowait method/mechanism
             # Try not to get stuck, but can't guarantee that another thread hasn't
@@ -210,7 +230,13 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
 
             # SimpleQueue with an item in the queue
             # This can deadlock if there's another reader of this same queue
-            return queue_obj.get()
+            try:
+                return queue_obj.get()
+            except (EOFError, BrokenPipeError):
+                raise Empty
+
+    except (EOFError, BrokenPipeError):
+        raise Empty
 
     finally:
         queue_obj = None

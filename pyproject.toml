@@ -1,7 +1,6 @@
 [project]
 name = "queuelink"
-version = "2.0.0"
-dynamic = ["dependencies", "optional-dependencies"]
+dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "Connect and link one or more Queues together or to files"
 readme = "README.rst"
 authors = [{ name = "Andy Robb", email = "andy@andyrobb.com" }]

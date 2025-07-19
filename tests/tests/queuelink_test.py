@@ -69,7 +69,7 @@ class QueueLinkTestCase(unittest.TestCase):
     def test_queuelink_get_client_id(self):
         queue_proxy = self.queue_factory()
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
-        client_id = queue_link.read(queue_proxy=queue_proxy)
+        client_id = queue_link.read(q=queue_proxy)
         queue_link.close()
 
         self.assertIsNotNone(client_id,
@@ -88,8 +88,8 @@ class QueueLinkTestCase(unittest.TestCase):
         dest_q = self.queue_factory()
         queue_link = QueueLink(name="test_link", thread_only=True)
 
-        source_id = queue_link.read(queue_proxy=source_q)
-        dest_id = queue_link.write(queue_proxy=dest_q)
+        source_id = queue_link.read(q=source_q)
+        dest_id = queue_link.write(q=dest_q)
 
         publisher = queue_link.client_pair_publishers[source_id]
 
@@ -113,8 +113,8 @@ class QueueLinkTestCase(unittest.TestCase):
 
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
-        source_id = queue_link.read(queue_proxy=source_q)
-        dest_id = queue_link.write(queue_proxy=dest_q)
+        source_id = queue_link.read(q=source_q)
+        dest_id = queue_link.write(q=dest_q)
 
         publisher = queue_link.client_pair_publishers[source_id]
 
@@ -139,12 +139,12 @@ class QueueLinkTestCase(unittest.TestCase):
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         # Add the queue once
-        queue_link.write(queue_proxy=q)
+        queue_link.write(q=q)
 
         # Should raise an error the next time
         self.assertRaises(ValueError,
                           queue_link.register_queue,
-                          queue_proxy=q,
+                          q=q,
                           direction=direction)
 
     @parameterized.expand([
@@ -160,13 +160,13 @@ class QueueLinkTestCase(unittest.TestCase):
         queue_link = QueueLink(name="test_link", start_method=self.start_method)
 
         # Add the queue once
-        queue_link.register_queue(queue_proxy=q,
+        queue_link.register_queue(q=q,
                                   direction=start_direction)
 
         # Should raise an error the next time
         self.assertRaises(ValueError,
                           queue_link.register_queue,
-                          queue_proxy=q,
+                          q=q,
                           direction=end_direction)
 
 

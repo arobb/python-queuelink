@@ -33,8 +33,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
-        source_id = queue_link.read(queue_proxy=source_q)
-        dest_id = queue_link.write(queue_proxy=dest_q)
+        source_id = queue_link.read(q=source_q)
+        dest_id = queue_link.write(q=dest_q)
 
         # Text to send
         text_in = "a😂" * 10
@@ -55,8 +55,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
-        source_id = queue_link.read(queue_proxy=source_q)
-        dest_id = queue_link.write(queue_proxy=dest_q)
+        source_id = queue_link.read(q=source_q)
+        dest_id = queue_link.write(q=dest_q)
 
         # Text to send
         text_in = "a😂" * 10
@@ -80,8 +80,8 @@ class QueueLinkExampleTestCase(unittest.TestCase):
         queue_link = QueueLink(name="my link", start_method=self.start_method)
 
         # Connect queues to the QueueLink
-        source_id = queue_link.read(queue_proxy=source_q)
-        dest_id = queue_link.write(queue_proxy=dest_q)
+        source_id = queue_link.read(q=source_q)
+        dest_id = queue_link.write(q=dest_q)
 
         # Text to send
         text_in = "a😂" * 10

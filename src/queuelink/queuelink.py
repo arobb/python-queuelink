@@ -172,14 +172,14 @@ class QueueLink(ClassTemplate):
 
         # Short-circut usage
         if source:
-            self.register_queue(queue_proxy=source, direction=DIRECTION.FROM)
+            self.register_queue(q=source, direction=DIRECTION.FROM)
 
         if destination:
             if not isinstance(destination, list):
                 destination = [destination]
 
             for q_inst in destination:
-                self.register_queue(queue_proxy=q_inst, direction=DIRECTION.TO)
+                self.register_queue(q=q_inst, direction=DIRECTION.TO)
 
 
     # Class contains Locks and Queues which cannot be pickled
@@ -360,7 +360,7 @@ class QueueLink(ClassTemplate):
 
     @validate_direction
     def register_queue(self,
-                       queue_proxy: UNION_SUPPORTED_QUEUES,
+                       q: UNION_SUPPORTED_QUEUES,
                        direction: DIRECTION) -> str:
         """Register a queue to this link
 
@@ -374,7 +374,7 @@ class QueueLink(ClassTemplate):
         future interactions.
 
         Args:
-            queue_proxy: Queue object to register
+            q: Queue object to register
             direction: FROM or TO
 
         Returns:
@@ -385,15 +385,15 @@ class QueueLink(ClassTemplate):
 
         # Warnings
         # Priority Queues
-        if isinstance(queue_proxy, tuple(PRIORITY_QUEUES)):
+        if isinstance(q, tuple(PRIORITY_QUEUES)):
             self._log.warning('Entries in a PriorityQueue must have the correct format (tuple or '
                            'simple class with a priority value) or the queue will block.')
 
         # SimpleQueues
-        if direction == DIRECTION.FROM and isinstance(queue_proxy, tuple(SIMPLE_QUEUES)):
+        if direction == DIRECTION.FROM and isinstance(q, tuple(SIMPLE_QUEUES)):
             self._log.warning('Using multiple readers on a SimpleQueue that is a source for a '
                               'QueueLink instance (including other QueueLink instances) can cause '
-                              'a deadlock. Queue type: %s.', type(queue_proxy))
+                              'a deadlock. Queue type: %s.', type(q))
 
         with self.queues_lock:
             # Get the queue list and opposite queue list
@@ -402,10 +402,10 @@ class QueueLink(ClassTemplate):
 
             # Make sure we don't accidentally create a loop, or add multiple
             # times
-            if queue_proxy in queue_dict.values():
+            if q in queue_dict.values():
                 raise ValueError("Cannot add this queue again")
 
-            if queue_proxy in op_queue_dict.values():
+            if q in op_queue_dict.values():
                 raise ValueError('This queue is in the opposite list. Cannot'
                                  f' add to the {direction} list because it would cause'
                                  ' a circular reference.')
@@ -415,7 +415,7 @@ class QueueLink(ClassTemplate):
             self.last_queue_id = queue_id
 
             # Store the queue proxy in the appropriate queue list
-            queue_dict[text(queue_id)] = queue_proxy
+            queue_dict[text(queue_id)] = q
 
             # (Re)create the publishing processes
             # New source:
@@ -450,27 +450,27 @@ class QueueLink(ClassTemplate):
 
         return text(queue_id)
 
-    def read(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+    def read(self, q: UNION_SUPPORTED_QUEUES) -> str:
         """Register a source queue
 
         Args:
-            queue_proxy: Queue or proxy object to a queue
+            q: Queue or proxy object to a queue
 
         Returns:
             The client's ID for access to this queue
         """
-        return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.FROM)
+        return self.register_queue(q=q, direction=DIRECTION.FROM)
 
-    def write(self, queue_proxy: UNION_SUPPORTED_QUEUES) -> str:
+    def write(self, q: UNION_SUPPORTED_QUEUES) -> str:
         """Register a destination queue
 
         Args:
-            queue_proxy: Queue or proxy object to a queue
+            q: Queue or proxy object to a queue
 
         Returns:
             The client's ID for access to this queue
         """
-        return self.register_queue(queue_proxy=queue_proxy, direction=DIRECTION.TO)
+        return self.register_queue(q=q, direction=DIRECTION.TO)
 
     def _start_publisher(self, source_id: str):
         """Eliminate duplicated Process() call in register_queue

@@ -7,7 +7,7 @@ import unittest
 from itertools import product
 from subprocess import Popen, PIPE
 
-from parameterized import parameterized, parameterized_class
+from parameterized import parameterized_class
 
 from tests.tests import context
 from queue import Queue

@@ -23,10 +23,10 @@ Some test commands
     tox --recreate
 
     # Run just one environment
-    tox -e py37
+    tox -e py313
 
-    # Run just one test
-    tox -- tests/tests/queuelink_test.py::QueueLinkTestCase::test_queuelink_prevent_cyclic_graph
+    # Run just one test file
+    tox -e py313 -- tests/tests/queuelink_examples_test.py
 
     # Disable parallel execution
     tox -- -n 0

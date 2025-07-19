@@ -7,7 +7,7 @@ Use
 ===
 A QueueLink is a one-way process that connects queues together. When two or more queues are linked, a sub-process is started to read from the "source" queue and write into the "destination" queue.
 
-Circular references are not allowed, making QueueLink a 'directed acyclic graph', or DAG.
+Circular references are not allowed.
 
 Users create each queue from the Queue or Multiprocessing libraries. Those queues can then be added to a QueueLink instance as either the source or destination.
 
@@ -17,7 +17,7 @@ With standard queues
 ::
 
     from queue import Queue
-    from queuelink import QueueLink, DIRECTION
+    from queuelink import QueueLink
 
     # Source and destination queues
     source_q = Queue()
@@ -27,8 +27,8 @@ With standard queues
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.read(queue_proxy=source_q)
-    dest_id = queue_link.write(queue_proxy=dest_q)
+    source_id = queue_link.read(q=source_q)
+    dest_id = queue_link.write(q=dest_q)
 
     # Text to send
     text_in = "a😂" * 10
@@ -60,8 +60,8 @@ With a process manager
     queue_link = QueueLink(name="my link")
 
     # Connect queues to the QueueLink
-    source_id = queue_link.read(queue_proxy=source_q)
-    dest_id = queue_link.write(queue_proxy=dest_q)
+    source_id = queue_link.read(q=source_q)
+    dest_id = queue_link.write(q=dest_q)
 
     # Text to send
     text_in = "a😂" * 10
@@ -80,7 +80,7 @@ Primary methods
 ---------------------
 These methods are used most common use cases.
 
-* ``register_queue(queue_proxy, direction: str, start_method: str=None) -> client id: str``
+* ``register_queue(q: UNION_SUPPORTED_QUEUES, direction: str, start_method: str=None) -> client id: str``
 * ``stop``
 
 Secondary methods

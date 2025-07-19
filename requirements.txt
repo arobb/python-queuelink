@@ -1,0 +1,3 @@
+importlib_metadata>=8.7.0
+kitchen>=1.2.6
+processrunner-kitchenpatch>=1.0.7

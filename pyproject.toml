@@ -20,11 +20,15 @@ repository = "https://github.com/arobb/python-queuelink"
 
 [build-system]
 requires = [
-    "setuptools >= 45 ; python_version >= '3.9'",
-    "setuptools_scm[toml] >= 6.2 ; python_version >= '3.9'",
+    "setuptools >= 80 ; python_version >= '3.9'",
+    "setuptools_scm[toml] >= 8.3.1 ; python_version >= '3.10'",
     "wheel >= 0.29.0",
 ]
 build-backend = 'setuptools.build_meta'
 
 [tool.setuptools_scm]
 
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies.test = {file = ["requirements-test.txt"]}
+optional-dependencies.docs = {file = ["requirements-docs.txt"]}

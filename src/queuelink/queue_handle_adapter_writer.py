@@ -117,7 +117,8 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             flush_timer = Timer(interval=1)  # Flush to disk at least once a second
 
             # Make comparisons easier/faster when checking for an open file
-            # get_args syntax used for Python 3.8-3.12 compatibility https://stackoverflow.com/a/64643971
+            # get_args syntax used for Python 3.8-3.12 compatibility
+            #   https://stackoverflow.com/a/64643971
             handle_ready = True
             if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
                 handle_name = handle

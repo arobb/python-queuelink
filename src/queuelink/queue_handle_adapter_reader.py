@@ -123,7 +123,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
 
         # Check if we can use the pipe directly
         # IO type that does not have readline, and is not a file path
-        # get_args syntax used for Python 3.8-3.12 compatibility https://stackoverflow.com/a/64643971
+        # get_args syntax used for Python 3.8-3.12 compatibility
+        #   https://stackoverflow.com/a/64643971
         if not hasattr(handle, 'readline') and \
           not isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
             original_handle = handle
@@ -179,7 +180,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         handle = add_methods_to_connections(conn=handle, trusted=trusted)
 
         # Open the handle is it is a path
-        # get_args syntax used for Python 3.8-3.12 compatibility https://stackoverflow.com/a/64643971
+        # get_args syntax used for Python 3.8-3.12 compatibility
+        #   https://stackoverflow.com/a/64643971
         handle_name = None
         if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
             handle_name = handle

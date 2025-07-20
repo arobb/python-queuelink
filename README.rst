@@ -3,6 +3,8 @@ QueueLink
 ---------
 The QueueLink library simplifies several queue patterns including linking queues together with one-to-many or many-to-one relationships. "Adapters" support reading and writing text-based files.
 
+Documentation: https://queuelink.readthedocs.io/en/latest/
+
 Use
 ===
 A QueueLink is a one-way process that connects queues together. When two or more queues are linked, a sub-process is started to read from the "source" queue and write into the "destination" queue.

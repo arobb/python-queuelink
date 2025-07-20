@@ -71,7 +71,7 @@ If both queues are created from the multiprocessing library the link will be a s
 
         # Retrieve the text from the destination queue!
         text_out = dest_q.get(timeout=1)
-        # self.assertEqual(text_in, text_out, 'Text is inconsistent')  # Pytest
+        print(text_out)
 
 .. code-block:: python
 
@@ -104,7 +104,40 @@ If both queues are created from the multiprocessing library the link will be a s
 
         # Retrieve the text from the destination queue!
         text_out = dest_q.get(timeout=1)
-        # self.assertEqual(text_in, text_out, 'Text is inconsistent')  # Pytest
+        print(text_out)
+
+Using a process manager for the queues
+--------------------------------------
+A `process manager <https://docs.python.org/3/library/multiprocessing.html#managers>`_ works across processes or whole machines, and can help mitigate `some kinds of issues <https://docs.python.org/3/library/multiprocessing.html#managers>`_ related to empty/get_nowait behavior and ordering.
+
+.. code-block:: python
+
+    from multiprocessing import Manager
+    from queuelink import QueueLink
+
+    # Create the multiprocessing.Manager
+    manager = Manager()
+
+    # Source and destination queues
+    source_q = manager.JoinableQueue()
+    dest_q = manager.JoinableQueue()
+
+    # Create the QueueLink
+    queue_link = QueueLink(name="my link")
+
+    # Connect queues to the QueueLink
+    source_id = queue_link.read(q=source_q)
+    dest_id = queue_link.write(q=dest_q)
+
+    # Text to send
+    text_in = "a😂" * 10
+
+    # Add text to the source queue
+    source_q.put(text_in)
+
+    # Retrieve the text from the destination queue!
+    text_out = dest_q.get()
+    print(text_out)
 
 Reading from an open subprocess PIPE
 ------------------------------------
@@ -142,7 +175,7 @@ This illustrates how to use a QueueLink adapter to read directly from a subproce
 
         # Get the text from the queue
         text_out = dest_q.get()
-        self.assertEqual(text_in, text_out, 'Text is inconsistent')
+        print(text_out)
 
 Start Method
 ============

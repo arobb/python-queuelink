@@ -14,7 +14,7 @@ Users create each queue from the Queue or Multiprocessing libraries. Those queue
 With standard queues
 --------------------
 
-::
+.. code-block:: python
 
     from queue import Queue
     from queuelink import QueueLink
@@ -44,10 +44,10 @@ With standard queues
 With a process manager
 ----------------------
 
-::
+.. code-block:: python
 
     from multiprocessing import Manager
-    from queuelink import QueueLink, DIRECTION
+    from queuelink import QueueLink
 
     # Create the multiprocessing.Manager
     manager = Manager()

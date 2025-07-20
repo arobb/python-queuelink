@@ -16,13 +16,14 @@ sys.path.insert(0, os.path.abspath(os.path.join('..', 'sys', 'queuelink')))
 
 
 # -- Project information -----------------------------------------------------
-from pkg_resources import get_distribution
+from importlib_metadata import version, packages_distributions
 
 project = 'QueueLink'
 copyright = '2025, Andy Robb'
 author = 'Andy Robb'
-release = get_distribution(project.lower()).version
-version = '.'.join(release.split('.')[:2])
+packages = packages_distributions()
+package_name = packages['queuelink'][0]
+version = version(package_name)
 
 # -- General configuration ---------------------------------------------------
 

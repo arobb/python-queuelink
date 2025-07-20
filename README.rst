@@ -95,7 +95,7 @@ These methods are less common.
 * ``unregister_queue(queue_id: str, direction: str, start_method: str=None)``
 
 Queue Compatibility
-=============
+===================
 QueueLink is tested against multiple native Queue implementations. When a source or destination queue is thread-based, the link will be created as a Thread instance. When all involved queues are process-based, the link will also be a Process instance.
 
 Note that in thread-based situations throughput might be limited by the `Python GIL <https://wiki.python.org/moin/GlobalInterpreterLock>`_.

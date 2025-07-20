@@ -10,9 +10,6 @@ QueueLink Class
 
 .. autoclass:: QueueLink
    :members:
-   :inherited-members:
-
-    .. autoclasstoc::
 
 Handle-to-Queue Adapter (Reader)
 --------------------------------
@@ -21,13 +18,9 @@ Handle-to-Queue Adapter (Reader)
    :members:
    :inherited-members:
 
-    .. autoclasstoc::
-
 Queue-to-Handle Adapter (Writer)
 --------------------------------
 
 .. autoclass:: QueueHandleAdapterWriter
    :members:
    :inherited-members:
-
-    .. autoclasstoc::

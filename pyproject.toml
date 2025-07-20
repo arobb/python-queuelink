@@ -14,9 +14,9 @@ classifiers = [
 ]
 
 [project.urls]
-homepage = "https://github.com/arobb/python-queuelink"
-repository = "https://github.com/arobb/python-queuelink"
-documentation = "https://queuelink.readthedocs.io/en/latest/"
+Documentation = "https://queuelink.readthedocs.io/en/latest/"
+Homepage = "https://github.com/arobb/python-queuelink"
+Repository = "https://github.com/arobb/python-queuelink"
 
 [build-system]
 requires = [

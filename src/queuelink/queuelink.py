@@ -582,7 +582,7 @@ class QueueLink(ClassTemplate):
         with self.queues_lock:
             queue_list = getattr(self, f'client_queues_{direction}')
             if text(queue_id) in queue_list:
-                queue_list.pop(queue_id)
+                queue_list.pop(text(queue_id))
 
             if direction == DIRECTION.FROM:
                 source_id = queue_id

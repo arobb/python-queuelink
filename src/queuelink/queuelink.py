@@ -561,6 +561,8 @@ class QueueLink(ClassTemplate):
             pass
 
         # Flip the "stop" event back to normal
+        # Clear the stop event so it can be reused if this publisher is restarted
+        # (e.g., when a new destination queue is registered)
         stop_event.clear()
 
     def _stop_publishers(self) -> None:
@@ -582,10 +584,12 @@ class QueueLink(ClassTemplate):
         Returns:
             ID of the client queue
         """
+        queue_id_txt = text(queue_id)
+
         with self.queues_lock:
             queue_list = getattr(self, f'client_queues_{direction}')
-            if text(queue_id) in queue_list:
-                queue_list.pop(text(queue_id))
+            if queue_id_txt in queue_list:
+                queue_list.pop(queue_id_txt)
 
             if direction == DIRECTION.FROM:
                 source_id = queue_id
@@ -595,7 +599,7 @@ class QueueLink(ClassTemplate):
                 self._stop_publisher(source_id)
 
                 # Remove the stop
-                self.publisher_stops.pop(queue_id)
+                self.publisher_stops.pop(queue_id_txt)
 
             else:
                 # Stop current processes
@@ -605,7 +609,7 @@ class QueueLink(ClassTemplate):
                 for source_id in self.client_queues_source:
                     self._start_publisher(source_id)
 
-        return text(queue_id)
+        return queue_id_txt
 
     def is_empty(self, queue_id: Union[str, None]=None) -> bool:
         """Checks whether the source or destination queues are empty

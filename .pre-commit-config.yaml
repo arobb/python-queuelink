@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.3
+    hooks:
+      - id: bandit
+        args: [-r, src/]
+
+# Pylint is intentionally excluded from pre-commit. It requires importing the
+# project's dependencies to analyze the code correctly, which means either
+# relying on a system install (fragile) or duplicating requirements.txt into
+# additional_dependencies here. Since pylint runs on every push via the CI
+# lint job, the local overhead is not worth the maintenance cost.

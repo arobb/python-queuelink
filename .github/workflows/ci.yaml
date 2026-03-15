@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Keep all matrix jobs running even if one fails, so we can see
+      # which specific versions or platforms are affected by a failure.
+      fail-fast: false
+      matrix:
+        # OS list reviewed: 2026-03-15
+        # Linux: LTS releases spanning the typical slow-upgrade enterprise gap.
+        # macOS: macos-13 (Intel x86_64, last Intel runner) and macos-15 (ARM M1,
+        #   latest). Both architectures are tested because fork/spawn behavior
+        #   differs between x86 and ARM, which is relevant for this library.
+        #   macos-14 is intentionally skipped — same ARM architecture as macos-15
+        #   with low risk of behavioral differences for a Python library.
+        os:
+          - ubuntu-22.04   # LTS, widely deployed
+          - ubuntu-24.04   # LTS, latest (= ubuntu-latest)
+          - macos-13       # Intel x86_64 — last Intel runner on GitHub Actions
+          - macos-15       # ARM M1, latest (= macos-latest)
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          # Map Python versions to tox environments. These entries are merged
+          # into every matching row in the os x python-version cartesian product.
+          - python-version: "3.9"
+            tox-env: py39
+          - python-version: "3.10"
+            tox-env: py310
+          - python-version: "3.11"
+            tox-env: py311
+          - python-version: "3.12"
+            tox-env: py312
+          - python-version: "3.13"
+            tox-env: py313
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history required for setuptools_scm to derive the package
+          # version from git tags. Shallow clones produce a LookupError.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: pip install tox
+
+      # The tox env runs pytest with --cov-append and parallel=True (see
+      # setup.cfg [coverage:run]), producing coverage/coverage.* data files.
+      # The tox 'clean' env is intentionally skipped here; each CI job starts
+      # with a fresh workspace so there is no stale coverage data to erase.
+      - name: Run tests
+        run: tox -e ${{ matrix.tox-env }}
+
+      # Artifact name includes both OS and Python version to avoid collisions
+      # across the matrix. include-hidden-files captures .coverage.* dotfiles.
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.python-version }}
+          path: coverage/
+          include-hidden-files: true
+
+  coverage:
+    name: Coverage report
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install coverage
+        run: pip install coverage
+
+      # merge-multiple=true lands all coverage/coverage.* files from every
+      # matrix job into the same coverage/ directory, matching the structure
+      # expected by the data_file setting in setup.cfg [coverage:run].
+      - name: Download all coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: coverage/
+
+      # coverage combine reads data_file from setup.cfg to locate the parallel
+      # data files and merges them into a single coverage/coverage report.
+      - name: Combine and report
+        run: |
+          python -m coverage combine
+          python -m coverage report
+          python -m coverage xml
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for setuptools_scm version derivation
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install tox
+        run: pip install tox
+
+      - name: Pylint
+        run: tox -e pylint
+
+      - name: Bandit
+        run: tox -e bandit
+
+  tests-passed:
+    # Summary job providing a single stable status check name for branch
+    # protection rules, regardless of how many matrix jobs exist. Requiring
+    # individual matrix job names in branch protection would need manual updates
+    # every time the OS or Python version list changes.
+    #
+    # This job is required as a status check in the main branch ruleset.
+    # See .github/rulesets/main.json.
+    name: Tests passed
+    if: always()
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" || \
+                "${{ needs.lint.result }}" != "success" ]]; then
+            echo "One or more required jobs failed:"
+            echo "  test: ${{ needs.test.result }}"
+            echo "  lint: ${{ needs.lint.result }}"
+            exit 1
+          fi

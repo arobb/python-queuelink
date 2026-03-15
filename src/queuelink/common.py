@@ -163,8 +163,6 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
     Raises:
         queue.Empty
     """
-    timer = Timer(interval=timeout)
-
     # Handle cycle time with the stop_event if present
     def wait(time_out: float=0):
         """Return False when timeout expires or True if the stop_event is set
@@ -187,6 +185,8 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
     # get(block=, timeout=) method signature doesn't exist for SimpleQueues
     # Alternative implementation to simulate the behavior
     except TypeError:
+        timer = Timer(interval=timeout)
+
         while True:
             # Asked to stop, so just stop
             if stop_event and stop_event.is_set():

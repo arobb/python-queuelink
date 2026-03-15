@@ -17,16 +17,18 @@ jobs:
       matrix:
         # OS list reviewed: 2026-03-15
         # Linux: LTS releases spanning the typical slow-upgrade enterprise gap.
-        # macOS: macos-13 (Intel x86_64, last Intel runner) and macos-15 (ARM M1,
-        #   latest). Both architectures are tested because fork/spawn behavior
-        #   differs between x86 and ARM, which is relevant for this library.
-        #   macos-14 is intentionally skipped — same ARM architecture as macos-15
-        #   with low risk of behavioral differences for a Python library.
+        # macOS: Both ARM and Intel are tested because fork/spawn behavior differs
+        #   between architectures, which is relevant for this library.
+        #   macos-26-intel is a standard (free) runner — Intel coverage does not
+        #   require a paid plan on macOS 26+. macos-15 is retained to cover the
+        #   prior ARM release. macos-14 is skipped — same ARM architecture as
+        #   macos-15 with low risk of behavioral differences for a Python library.
         os:
-          - ubuntu-22.04   # LTS, widely deployed
-          - ubuntu-24.04   # LTS, latest (= ubuntu-latest)
-          - macos-13       # Intel x86_64 — last Intel runner on GitHub Actions
-          - macos-15       # ARM M1, latest (= macos-latest)
+          - ubuntu-22.04    # LTS, widely deployed
+          - ubuntu-24.04    # LTS, latest (= ubuntu-latest)
+          - macos-15        # ARM M1, Sequoia
+          - macos-26        # ARM M1, macOS 26 (= macos-latest)
+          - macos-26-intel  # Intel x64, macOS 26 — standard (free) runner
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
           # Map Python versions to tox environments. These entries are merged

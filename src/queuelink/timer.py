@@ -29,8 +29,8 @@ class Timer:
         Returns:
             Current Unix epoch time in integer seconds with decimal resolution to microseconds.
         """
-        current = time.mktime(datetime.datetime.now().timetuple()) \
-            + datetime.datetime.now().microsecond / float(Timer.SEC_TO_MICRO)
+        dt = datetime.datetime.now()
+        current = time.mktime(dt.timetuple()) + dt.microsecond / float(Timer.SEC_TO_MICRO)
 
         return float(current)
 

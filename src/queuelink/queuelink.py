@@ -14,6 +14,7 @@ from threading import Thread  # For non-multi-processing queues
 
 # Multiprocessing imports
 import multiprocessing
+from ctypes import c_int
 
 # Internal imports
 from .classtemplate import ClassTemplate
@@ -73,7 +74,7 @@ class LimitedLengthQueue(object):
                  max_size: int=0):
         self._queue = queue_instance
         self.max_size = max_size
-        self._queue_length = 0
+        self._queue_length = multiprocessing.Value(c_int, 0)
 
         if not self._queue.empty():
             raise ValueError('Cannot start with a non-empty Queue!')
@@ -84,7 +85,8 @@ class LimitedLengthQueue(object):
             self.get()
 
         self._queue.put(*args, **kwargs)
-        self._queue_length += 1
+        with self._queue_length.get_lock():
+            self._queue_length.value += 1
 
     def get(self, *args, **kwargs):
         """Retrieve an element from the queue
@@ -92,7 +94,8 @@ class LimitedLengthQueue(object):
         :throws Empty
         """
         value = self._queue.get(*args, **kwargs)
-        self._queue_length -= 1
+        with self._queue_length.get_lock():
+            self._queue_length.value -= 1
 
         return value
 
@@ -101,7 +104,7 @@ class LimitedLengthQueue(object):
 
         Based on the wrapper's counter; does not rely on the underlying queue implementation.
         """
-        return self._queue_length
+        return self._queue_length.value
 
     def __getattr__(self, item):
         if item in ('_queue', '_queue_length', 'max_size', 'get', 'put'):

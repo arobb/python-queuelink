@@ -65,14 +65,27 @@ jobs:
       - name: Run tests
         run: tox -e ${{ matrix.tox-env }}
 
+      # pytest-cov internally calls 'coverage combine', which merges parallel
+      # data files into a single 'coverage/coverage' file (no suffix). If all
+      # 25 matrix jobs upload a file with this same name, merge-multiple=true
+      # in the download step causes them to overwrite each other, leaving only
+      # one job's data. Adding the matrix coordinates as a suffix makes each
+      # file unique so the coverage reporting job can combine all of them.
+      - name: Suffix coverage data file for artifact merge
+        run: |
+          if [ -f coverage/coverage ]; then
+            mv coverage/coverage \
+               "coverage/coverage.${{ matrix.os }}.${{ matrix.python-version }}"
+          fi
+
       # Artifact name includes both OS and Python version to avoid collisions
-      # across the matrix. include-hidden-files captures .coverage.* dotfiles.
+      # across the matrix.
       - name: Upload coverage data
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.python-version }}
           path: coverage/
-          include-hidden-files: true
+          include-hidden-files: false
 
   coverage:
     name: Coverage report

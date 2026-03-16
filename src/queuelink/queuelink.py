@@ -71,7 +71,11 @@ class LimitedLengthQueue(object):
     """
     def __init__(self,
                  queue_instance: multiprocessing.queues.Queue,
-                 max_size: int=0):
+                 max_size: int=0,
+                 start_method: str=None):
+        # Which multiprocess context to use
+        self.multiprocessing_ctx = multiprocessing.get_context(start_method)
+
         self._queue = queue_instance
         self.max_size = max_size
         self._queue_length = multiprocessing.Value(c_int, 0)
@@ -81,7 +85,7 @@ class LimitedLengthQueue(object):
 
     def put(self, *args, **kwargs):
         """Add an element to the queue"""
-        while self._queue_length >= self.max_size:
+        while self._queue_length.value >= self.max_size:
             self.get()
 
         self._queue.put(*args, **kwargs)
@@ -270,7 +274,8 @@ class QueueLink(ClassTemplate):
                    timeout: float,
                    metrics_queue: UNION_SUPPORTED_QUEUES,
                    metric_interval: int=100,
-                   name: str=None) -> None:
+                   name: str=None,
+                   start_method: str=None) -> None:
         """Move messages from the source queue to the destination queue
 
         Args:
@@ -282,6 +287,7 @@ class QueueLink(ClassTemplate):
             metrics_queue: Where to place metric instances
             metric_interval: How many messages between metric emissions
             name: Name to use in logging
+            start_method: For multiprocess use: fork, spawn or forkserver
         """
         # Make a helpful logger name
         if name is None:
@@ -298,7 +304,9 @@ class QueueLink(ClassTemplate):
 
         latency_metric_id = metrics.add_element(metric_type='timing', name='pipe latency')
         metrics.start(latency_metric_id)
-        metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue, max_size=100)
+        metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue,
+                                                   max_size=100,
+                                                   start_method=start_method)
 
         counting_metric_id = metrics.add_element(metric_type='counting', name='movement count')
 

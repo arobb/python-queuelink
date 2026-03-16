@@ -28,12 +28,11 @@ class MessageCounter(object):
 
     Access the count with MessageCenter.value"""
     def __init__(self,
-                 thread_only: bool=False,
                  start_method: str=None):
         # Which multiprocess context to use
         self.multiprocessing_ctx = multiprocessing.get_context(start_method)
 
-        self.counter = threading.local() if thread_only else self.multiprocessing_ctx.Value('Q')
+        self.counter = self.multiprocessing_ctx.Value('Q')
         self.counter.value = 0
 
     def increment(self) -> None:
@@ -121,8 +120,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Store the number of messages processed
         # Q unsigned long long https://docs.python.org/3/library/array.html#module-array
-        self.messages_processed = MessageCounter(thread_only=thread_only,
-                                                 start_method=start_method)
+        self.messages_processed = MessageCounter(start_method=start_method)
 
         # Store other args
         self.kwargs = kwargs

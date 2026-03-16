@@ -5,7 +5,6 @@ from __future__ import unicode_literals
 import io
 import random
 import tempfile  # For comparisons
-import threading
 
 from pickle import PicklingError  # nosec
 from threading import Thread  # For non-multi-processing queues
@@ -168,7 +167,9 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Select the right concurrency mechanism
         threaded = is_threaded(self.queue)
+        # pylint: disable=invalid-name
         Parallel = Thread if threaded or self.thread_only else self.multiprocessing_ctx.Process
+        # pylint: enable=invalid-name
 
         # Arguments for
         arg_dict = {

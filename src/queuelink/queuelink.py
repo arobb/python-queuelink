@@ -267,7 +267,7 @@ class QueueLink(ClassTemplate):
         self._stop_publishers()
 
     @staticmethod
-    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,
+    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,  # pylint: disable=too-many-locals
                    source_id: str,
                    source_queue: UNION_SUPPORTED_QUEUES,
                    dest_queues_dict: dict[str, UNION_SUPPORTED_QUEUES],
@@ -525,7 +525,9 @@ class QueueLink(ClassTemplate):
         threaded = is_threaded([source_queue, *dest_queues_dict.values()])
 
         # Decide whether to use a local thread or process-based publisher
+        # pylint: disable=invalid-name
         Parallel = Thread if threaded or self.thread_only else self.Process
+        # pylint: enable=invalid-name
 
         # Start the publisher
         proc = Parallel(target=self._publisher,

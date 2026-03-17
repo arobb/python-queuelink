@@ -1,0 +1,126 @@
+name: Publish
+
+# Triggers:
+#   push v* tag  — builds and publishes to PyPI (release)
+#   workflow_dispatch — builds and publishes to TestPyPI (snapshot/validation)
+#
+# PyPI setup (one-time, per environment):
+#   PyPI:     https://pypi.org/manage/project/queuelink/settings/publishing/
+#   TestPyPI: https://test.pypi.org/manage/project/queuelink/settings/publishing/
+#   Add a trusted publisher for each:
+#     Owner:    arobb
+#     Repo:     python-queuelink
+#     Workflow: publish.yaml
+#     Environment: pypi  (or testpypi)
+#
+# GitHub setup (one-time):
+#   Settings → Environments → New environment
+#   Create 'pypi' and 'testpypi' environments.
+#   Adding a required reviewer to 'pypi' is recommended — it provides a
+#   manual gate before production releases even for a solo project.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Publish target'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - testpypi
+
+jobs:
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # Required for build provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history required for setuptools_scm to derive the version
+          # from the nearest tag. Shallow clones produce a LookupError.
+          fetch-depth: 0
+
+      # Guard against a signed tag created on an arbitrary commit bypassing
+      # the protected main branch. Every release tag must point to a commit
+      # that is reachable from main, ensuring CI has already passed on it.
+      - name: Verify tag is reachable from main
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '${{ github.ref_name }}' does not point to a \
+          commit reachable from main. Create the tag from a commit that has \
+          passed CI on main."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install build
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      # Generates SLSA provenance attestations and uploads them to GitHub.
+      # Attestations are displayed on the package page on PyPI and can be
+      # verified with: gh attestation verify dist/<file> -R arobb/python-queuelink
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/queuelink
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/queuelink
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

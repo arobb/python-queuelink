@@ -5,7 +5,6 @@ from __future__ import unicode_literals
 import io
 import random
 import tempfile  # For comparisons
-import threading
 
 from pickle import PicklingError  # nosec
 from threading import Thread  # For non-multi-processing queues
@@ -27,8 +26,12 @@ class MessageCounter(object):
     """Track the number of messages processed by an Adapter.
 
     Access the count with MessageCenter.value"""
-    def __init__(self, thread_only: bool=False):
-        self.counter = threading.local() if thread_only else multiprocessing.Value('Q')
+    def __init__(self,
+                 start_method: str=None):
+        # Which multiprocess context to use
+        self.multiprocessing_ctx = multiprocessing.get_context(start_method)
+
+        self.counter = self.multiprocessing_ctx.Value('Q')
         self.counter.value = 0
 
     def increment(self) -> None:
@@ -116,7 +119,7 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Store the number of messages processed
         # Q unsigned long long https://docs.python.org/3/library/array.html#module-array
-        self.messages_processed = MessageCounter()
+        self.messages_processed = MessageCounter(start_method=start_method)
 
         # Store other args
         self.kwargs = kwargs
@@ -164,7 +167,9 @@ class _QueueHandleAdapterBase(ClassTemplate):
 
         # Select the right concurrency mechanism
         threaded = is_threaded(self.queue)
+        # pylint: disable=invalid-name
         Parallel = Thread if threaded or self.thread_only else self.multiprocessing_ctx.Process
+        # pylint: enable=invalid-name
 
         # Arguments for
         arg_dict = {

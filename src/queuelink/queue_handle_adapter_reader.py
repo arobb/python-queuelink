@@ -185,7 +185,7 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         handle_name = None
         if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
             handle_name = handle
-            handle = open(handle_name, 'r')
+            handle = open(handle_name, 'r')  # pylint: disable=consider-using-with
 
         # Calculate the threshold to use
         wrap_threshold = ContentWrapper.THRESHOLD if wrap_threshold is None else wrap_threshold

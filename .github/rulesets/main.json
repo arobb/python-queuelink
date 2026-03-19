@@ -1,19 +1,4 @@
 {
-  "_comment": [
-    "Branch protection ruleset for the main branch.",
-    "",
-    "To apply: GitHub UI → Settings → Rules → Rulesets → Import a ruleset.",
-    "After importing, verify the two required status checks are sourced from",
-    "'GitHub Actions' in the UI — the integration_id below targets the GitHub",
-    "Actions app but should be confirmed after import.",
-    "",
-    "Required status checks correspond to job 'name:' fields in ci.yaml:",
-    "  'Tests passed'   — job: tests-passed (aggregates all test + lint jobs)",
-    "  'Coverage report' — job: coverage (only passes if all test jobs passed)",
-    "",
-    "If you add a new required check or rename a job, update this file and",
-    "re-import, or apply the change manually in Settings → Rules → Rulesets."
-  ],
   "name": "Protect main",
   "target": "branch",
   "enforcement": "active",
@@ -26,17 +11,12 @@
   "bypass_actors": [],
   "rules": [
     {
-      "_comment": "Prevent direct deletion of the main branch.",
       "type": "deletion"
     },
     {
-      "_comment": "Prevent force-pushes to main, preserving linear history.",
       "type": "non_fast_forward"
     },
     {
-      "_comment": "All changes must arrive via a pull request. No approvals are",
-      "_comment2": "required (solo project), but the PR process is enforced to",
-      "_comment3": "ensure CI runs before merge.",
       "type": "pull_request",
       "parameters": {
         "required_approving_review_count": 0,
@@ -47,10 +27,6 @@
       }
     },
     {
-      "_comment": "CI must pass before merging. 'Tests passed' is a summary job",
-      "_comment2": "that aggregates all matrix test jobs and the lint job, so adding",
-      "_comment3": "new OS/Python versions to the matrix does not require updating",
-      "_comment4": "this ruleset. See ci.yaml job 'tests-passed' for details.",
       "type": "required_status_checks",
       "parameters": {
         "strict_required_status_checks_policy": true,
@@ -67,9 +43,10 @@
       }
     },
     {
-      "_comment": "Require a linear commit history (squash or rebase merges only).",
-      "_comment2": "Keeps main history clean and makes git log/bisect easier.",
       "type": "required_linear_history"
+    },
+    {
+      "type": "required_signatures"
     }
   ]
 }

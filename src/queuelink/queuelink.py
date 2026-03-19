@@ -14,6 +14,7 @@ from threading import Thread  # For non-multi-processing queues
 
 # Multiprocessing imports
 import multiprocessing
+from ctypes import c_int
 
 # Internal imports
 from .classtemplate import ClassTemplate
@@ -70,21 +71,26 @@ class LimitedLengthQueue(object):
     """
     def __init__(self,
                  queue_instance: multiprocessing.queues.Queue,
-                 max_size: int=0):
+                 max_size: int=0,
+                 start_method: str=None):
+        # Which multiprocess context to use
+        self.multiprocessing_ctx = multiprocessing.get_context(start_method)
+
         self._queue = queue_instance
         self.max_size = max_size
-        self._queue_length = 0
+        self._queue_length = multiprocessing.Value(c_int, 0)
 
         if not self._queue.empty():
             raise ValueError('Cannot start with a non-empty Queue!')
 
     def put(self, *args, **kwargs):
         """Add an element to the queue"""
-        while self._queue_length >= self.max_size:
+        while self._queue_length.value >= self.max_size:
             self.get()
 
         self._queue.put(*args, **kwargs)
-        self._queue_length += 1
+        with self._queue_length.get_lock():
+            self._queue_length.value += 1
 
     def get(self, *args, **kwargs):
         """Retrieve an element from the queue
@@ -92,7 +98,8 @@ class LimitedLengthQueue(object):
         :throws Empty
         """
         value = self._queue.get(*args, **kwargs)
-        self._queue_length -= 1
+        with self._queue_length.get_lock():
+            self._queue_length.value -= 1
 
         return value
 
@@ -101,7 +108,7 @@ class LimitedLengthQueue(object):
 
         Based on the wrapper's counter; does not rely on the underlying queue implementation.
         """
-        return self._queue_length
+        return self._queue_length.value
 
     def __getattr__(self, item):
         if item in ('_queue', '_queue_length', 'max_size', 'get', 'put'):
@@ -260,14 +267,15 @@ class QueueLink(ClassTemplate):
         self._stop_publishers()
 
     @staticmethod
-    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,
+    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,  # pylint: disable=too-many-locals
                    source_id: str,
                    source_queue: UNION_SUPPORTED_QUEUES,
                    dest_queues_dict: dict[str, UNION_SUPPORTED_QUEUES],
                    timeout: float,
                    metrics_queue: UNION_SUPPORTED_QUEUES,
                    metric_interval: int=100,
-                   name: str=None) -> None:
+                   name: str=None,
+                   start_method: str=None) -> None:
         """Move messages from the source queue to the destination queue
 
         Args:
@@ -279,6 +287,7 @@ class QueueLink(ClassTemplate):
             metrics_queue: Where to place metric instances
             metric_interval: How many messages between metric emissions
             name: Name to use in logging
+            start_method: For multiprocess use: fork, spawn or forkserver
         """
         # Make a helpful logger name
         if name is None:
@@ -295,7 +304,9 @@ class QueueLink(ClassTemplate):
 
         latency_metric_id = metrics.add_element(metric_type='timing', name='pipe latency')
         metrics.start(latency_metric_id)
-        metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue, max_size=100)
+        metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue,
+                                                   max_size=100,
+                                                   start_method=start_method)
 
         counting_metric_id = metrics.add_element(metric_type='counting', name='movement count')
 
@@ -514,7 +525,9 @@ class QueueLink(ClassTemplate):
         threaded = is_threaded([source_queue, *dest_queues_dict.values()])
 
         # Decide whether to use a local thread or process-based publisher
+        # pylint: disable=invalid-name
         Parallel = Thread if threaded or self.thread_only else self.Process
+        # pylint: enable=invalid-name
 
         # Start the publisher
         proc = Parallel(target=self._publisher,
@@ -558,6 +571,8 @@ class QueueLink(ClassTemplate):
             pass
 
         # Flip the "stop" event back to normal
+        # Clear the stop event so it can be reused if this publisher is restarted
+        # (e.g., when a new destination queue is registered)
         stop_event.clear()
 
     def _stop_publishers(self) -> None:
@@ -579,10 +594,12 @@ class QueueLink(ClassTemplate):
         Returns:
             ID of the client queue
         """
+        queue_id_txt = text(queue_id)
+
         with self.queues_lock:
             queue_list = getattr(self, f'client_queues_{direction}')
-            if text(queue_id) in queue_list:
-                queue_list.pop(queue_id)
+            if queue_id_txt in queue_list:
+                queue_list.pop(queue_id_txt)
 
             if direction == DIRECTION.FROM:
                 source_id = queue_id
@@ -592,7 +609,7 @@ class QueueLink(ClassTemplate):
                 self._stop_publisher(source_id)
 
                 # Remove the stop
-                self.publisher_stops.pop(queue_id)
+                self.publisher_stops.pop(queue_id_txt)
 
             else:
                 # Stop current processes
@@ -602,7 +619,7 @@ class QueueLink(ClassTemplate):
                 for source_id in self.client_queues_source:
                     self._start_publisher(source_id)
 
-        return text(queue_id)
+        return queue_id_txt
 
     def is_empty(self, queue_id: Union[str, None]=None) -> bool:
         """Checks whether the source or destination queues are empty

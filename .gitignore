@@ -8,3 +8,6 @@ venv*
 coverage
 .tox
 throughput
+
+# Claude Code local state (worktrees, memory, settings)
+.claude/

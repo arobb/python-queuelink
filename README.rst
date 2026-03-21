@@ -1,9 +1,47 @@
 ---------
 QueueLink
 ---------
-The QueueLink library simplifies several queue patterns including linking queues together with one-to-many or many-to-one relationships. "Adapters" support reading and writing text-based files.
 
-Documentation: https://queuelink.readthedocs.io/en/latest/
+
+.. image:: https://github.com/arobb/python-queuelink/actions/workflows/ci.yaml/badge.svg
+   :target: https://github.com/arobb/python-queuelink/actions/workflows/ci.yaml
+   :alt: CI
+
+.. image:: https://img.shields.io/pypi/v/queuelink.svg
+   :target: https://pypi.org/project/queuelink/
+   :alt: PyPI
+
+.. image:: https://img.shields.io/pypi/pyversions/queuelink.svg
+   :target: https://pypi.org/project/queuelink/
+   :alt: Python versions
+
+.. image:: https://readthedocs.org/projects/queuelink/badge/?version=latest
+   :target: https://queuelink.readthedocs.io/en/latest/
+   :alt: Documentation
+
+Route messages between any combination of Python queues — fan-out, fan-in,
+or many-to-many — without the boilerplate.
+
+Why?
+====
+Connecting ``queue.Queue``, ``multiprocessing.Queue``, and
+``multiprocessing.Manager().Queue`` by hand means writing your own publisher
+loops, handling thread-vs-process selection, and dealing with edge cases like
+pipe size limits and clean shutdown. QueueLink handles all of that:
+
+* **Automatic thread/process selection** — detects whether your queues are thread-based or process-based and creates the right kind of link.
+* **Fan-out and fan-in** — one source to many destinations, many sources to one destination, or any combination.
+* **Handle adapters** — bridge subprocess pipes, file handles, and multiprocessing connections directly into your queue graph.
+* **Large-message spill-to-disk** — transparently buffers oversized objects to disk to avoid pipe size limits.
+* **Tested across fork, forkserver, and spawn** — CI runs a 25-job matrix across Linux, macOS, and Python 3.9–3.13.
+
+Install
+=======
+
+::
+
+    pip install queuelink
+
 
 Use
 ===

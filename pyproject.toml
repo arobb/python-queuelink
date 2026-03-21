@@ -5,18 +5,38 @@ description = "Connect and link one or more Queues together or to files"
 readme = "README.rst"
 authors = [{ name = "Andy Robb", email = "andy@andyrobb.com" }]
 license = { file = "LICENSE.txt" }
-keywords = ["utility"]
+keywords = [
+    "queue",
+    "multiprocessing",
+    "threading",
+    "concurrency",
+    "pipeline",
+    "fan-out",
+    "pub-sub",
+    "IPC",
+    "producer-consumer",
+]
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "Topic :: Utilities",
     "License :: OSI Approved :: MIT License",
-    "Topic :: Software Development :: Libraries :: Python Modules"
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
 ]
 
 [project.urls]
 Documentation = "https://queuelink.readthedocs.io/en/latest/"
 Homepage = "https://github.com/arobb/python-queuelink"
 Repository = "https://github.com/arobb/python-queuelink"
+Changelog = "https://github.com/arobb/python-queuelink/releases"
 
 [build-system]
 requires = [

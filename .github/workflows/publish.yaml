@@ -32,6 +32,7 @@ on:
         type: choice
         options:
           - testpypi
+          - pypi
 
 jobs:
   build:

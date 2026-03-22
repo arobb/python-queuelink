@@ -148,20 +148,27 @@ tests/
 
 ### Test conventions
 
-- **Every test file** must `from tests.tests import context` to configure `sys.path` and logging.
-- **Parameterized matrix**: Tests use `@parameterized_class` with the cartesian product
-  of `QUEUE_TYPE_LIST` (9 queue types) × `PROC_START_METHODS` (fork, forkserver, spawn).
-  This generates ~27 test classes per test case. New tests should follow this pattern.
-- **`queue_factory()`**: Each test class provides a `queue_factory()` method that creates
-  the correct queue type based on `self.module` and `self.class_name`. Use it — do not
-  create queues directly in test methods.
-- **`setUp` / `tearDown`**: Always create a `multiprocessing.get_context(self.start_method)`
-  context and a Manager in `setUp`, and call `self.manager.shutdown()` in `tearDown`.
+- **Two valid test styles exist**:
+  1. Matrix tests for queue/start-method compatibility (primary pattern)
+  2. Focused unit/example tests for isolated behavior or README-style usage
+- **`context` import is required for matrix/integration-style tests** that rely on
+  shared path/logging setup. Focused unit tests that import from the installed package
+  path and do not require shared logging setup may omit it.
+- **Parameterized matrix (for compatibility tests)**: Use `@parameterized_class` with
+  the cartesian product of `QUEUE_TYPE_LIST` (9 queue types) × `PROC_START_METHODS`
+  (fork, forkserver, spawn). This generates ~27 test classes per test case.
+- **`queue_factory()` (for matrix queue tests)**: Provide and use `queue_factory()`
+  to create queue instances from the parameterized queue type metadata. Do not create
+  queue instances directly in those test methods.
+- **`setUp` / `tearDown` (for start-method parameterized tests)**: Create
+  `multiprocessing.get_context(self.start_method)` in `setUp`. Create a Manager only
+  when the test needs manager-backed queues/proxies, and call `self.manager.shutdown()`
+  in `tearDown` whenever a Manager was created.
 - **Test file naming**: `*_test.py` suffix (not `test_*` prefix). Files with
   `*_test_exclude.py` suffix are intentionally excluded from collection — do not rename them.
-- **Start method filtering**: Tests parameterized by start method are automatically
-  split across the two tox phases. Use `forkserver` or `spawn` in the test name/parameter
-  so tox's `-k` filter can separate them.
+- **Start method filtering**: Start-method-parameterized tests are split across two tox
+  phases. Include `forkserver`/`spawn` in test names or parameter IDs so tox's `-k`
+  filters can separate them.
 
 ## Verifying Changes
 

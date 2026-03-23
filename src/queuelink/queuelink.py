@@ -497,10 +497,10 @@ class QueueLink(ClassTemplate):
         dest_queues_dict = self.client_queues_destination
         destination_names = "-".join(dest_queues_dict.keys())
 
-        # Make sure we don't ovewrite a running Process
+        # Make sure we don't overwrite a running publisher (Process or Thread)
         try:
-            if self.client_pair_publishers[text(source_id)].exitcode is None:
-                raise ValueError("Cannot overwrite a running Process!")
+            if self.client_pair_publishers[text(source_id)].is_alive():
+                raise ValueError("Cannot overwrite a running publisher!")
 
         # If this is new, there won't be an existing value here
         except KeyError:
@@ -574,6 +574,14 @@ class QueueLink(ClassTemplate):
         # Clear the stop event so it can be reused if this publisher is restarted
         # (e.g., when a new destination queue is registered)
         stop_event.clear()
+
+        # Drain the shared metrics_queue so the next publisher can wrap it in
+        # a fresh LimitedLengthQueue (which requires an empty queue on init).
+        try:
+            while not self.metrics_queue.empty():
+                self.metrics_queue.get_nowait()
+        except Exception:  # pylint: disable=broad-except
+            pass
 
     def _stop_publishers(self) -> None:
         """Stop all current publisher processes"""

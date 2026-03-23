@@ -51,7 +51,7 @@ src/queuelink/
 ├── throughput.py             # Benchmarking: measures latency and throughput per queue/start type
 ├── throughput_results.py     # SQLite storage for throughput benchmark results
 ├── version.py                # Package version via importlib.metadata
-├── link.py                   # Stub — factory function (not yet implemented)
+├── link.py                   # Factory function: auto-wires source/destination pairs
 └── classtemplate.py          # Logging mixin base class
 ```
 
@@ -75,6 +75,8 @@ from `queuelink` directly:
 - `QueueHandleAdapterReader` — reads from file/pipe handles into queues
 - `QueueHandleAdapterWriter` — writes from queues to file/pipe handles
 - `writeout` — UTF-8 pipe writer helper
+- `link` — factory function: inspects source/destination types and wires the correct
+  combination of `QueueLink`, `QueueHandleAdapterReader`, and/or `QueueHandleAdapterWriter`
 
 Everything else (e.g., `common.QUEUE_TYPE_LIST`, `exceptionhandler.ProcessNotStarted`)
 is internal. Import from the submodule directly if needed, but do not add to `__init__.py`
@@ -95,6 +97,84 @@ Test:
 Do not introduce alternative libraries for encoding or test parameterization
 without checking whether the existing ones already cover the use case.
 
+## Agent Workflow
+
+For any non-trivial task (multiple files, multiple concerns, or more than a few
+steps), agents must plan and track their work to avoid context bloat:
+
+1. **Break the task down** into discrete, ordered steps before writing any code.
+2. **Track progress in the feature directory**: for feature work, update
+   `tasks/FEAT-NNN/PROGRESS.md`. For ad-hoc work outside a registered feature,
+   create a `PROGRESS.md` inside a new `tasks/` subdirectory rather than in the
+   repo root. Use a simple checklist format:
+   ```
+   # <Task Name> Progress
+
+   - [ ] Step one
+   - [x] Step two (done)
+   - [ ] Step three
+   ```
+3. **Update the file as work proceeds** — check off completed steps and note any
+   decisions or scope changes inline. This keeps the task state in a file rather
+   than in the context window.
+4. **Feature directories persist** until the feature is closed in `tasks/TODO.md`.
+   Do not delete `tasks/FEAT-NNN/` unilaterally.
+
+Do not rely on chat history or context memory to track multi-step progress.
+The progress file is the source of truth for where the task stands.
+
+## Task Coordination
+
+This section applies when multiple agents work concurrently. For single-agent
+work, the `*_PROGRESS.md` approach in Agent Workflow above is sufficient.
+
+**Task board**: `tasks/TODO.md` — all work is registered here, including
+features. Features appear as a single row in `tasks/TODO.md` with their detail
+in `tasks/FEAT-NNN/`.
+
+**Before starting any task**:
+- Read `tasks/FEAT-NNN/PLAN.md` and `tasks/FEAT-NNN/PROGRESS.md` for the
+  feature before claiming a task.
+- Only claim tasks whose dependencies are all DONE.
+
+**Claiming a task**:
+- Set Status to `IN_PROGRESS` with your session ID and timestamp.
+- Re-read the file immediately to verify your claim is still present — another
+  agent may have claimed it in the same window. If your claim is gone, pick a
+  different task. Do not skip this verification step; the re-read is the only
+  guard against concurrent claims.
+
+**While working**:
+- Do not touch files listed in the `Files` field of any `IN_PROGRESS` task you
+  do not own.
+- Do not start Phase N+1 tasks until all Phase N tasks are DONE (phases are
+  defined in the feature's `tasks/FEAT-NNN/TODO.md`).
+- Record non-obvious decisions in `DECISIONS.md` (feature-scoped at
+  `tasks/FEAT-NNN/DECISIONS.md`, or top-level at `tasks/DECISIONS.md`).
+- Surface open questions in `PLAN.md` rather than deciding unilaterally.
+
+**Review feedback**:
+- Review documents live at `tasks/REVIEW-NNN.md` (not inside any `FEAT-NNN/`
+  directory — reviews are cross-cutting).
+- Each review item should include: area, severity, effort, and a brief fix
+  recommendation. Group items by category (bugs, design issues, consistency,
+  performance, structural).
+- End every review with a Prioritization Summary table: `# | Area | Severity |
+  Effort | Status`.
+- Open items must be triaged into `tasks/TODO.md` (as a feature or standalone
+  task) before being actioned. Do not implement review items directly without a
+  corresponding task board entry.
+- Mark items `✅ Resolved (FEAT-NNN)` in both the summary table and the item
+  body when closed; do not delete them.
+
+**Documentation ownership**:
+- Each output file (`README.rst`, `docs/api.rst`, etc.) has one owning agent
+  at a time — coordinate via the task board before editing shared doc files.
+- Stub doc files with section headers during Phase 1 before implementation
+  begins, so later phases have a clear target.
+- Include a reconciliation task as the final phase of each feature to check
+  consistency across all docs before the feature is marked complete.
+
 ## Coding Conventions
 
 - Python 3.9+ compatibility required (no `X | Y` unions, use `Union[X, Y]`)
@@ -105,6 +185,29 @@ without checking whether the existing ones already cover the use case.
 - Pylint runs via tox; IDE pylint may not read `setup.cfg` `[pylint.*]` sections
 - Bandit runs on `src/` only; `# nosec` comments mark intentional exceptions
   (e.g. `random.choice` for non-cryptographic IDs)
+- Prefer enums over raw strings for fixed, well-known values (e.g. use
+  `DIRECTION.FROM`/`DIRECTION.TO` instead of `'source'`/`'destination'`).
+  String comparisons are fragile — typos produce silent failures rather than errors.
+- Add a blank line after `return` (and `raise`) statements inside `if` blocks to
+  visually separate independent branches. This applies within functions that contain
+  multiple sequential guard clauses or classification blocks (e.g. `_is_queue()`,
+  `_classify()`).
+- Use `@property` only for attributes that are safe to call at any time with no
+  observable side effects — i.e. pure reads of already-computed state. Do not use
+  `@property` for operations that acquire locks, perform I/O, mutate state, or have
+  any cost beyond a simple attribute lookup. IDEs and debuggers enumerate properties
+  automatically when inspecting objects, which can trigger unintended behavior or
+  mask real state. Expose such operations as explicit methods instead.
+- Catch specific exception types rather than `Exception` or `BaseException`. Broad
+  excepts swallow unexpected errors and make debugging harder. If a broad except is
+  genuinely necessary (e.g. guarding shutdown code against unpredictable queue state),
+  add an inline comment explaining why the broad catch is justified.
+- Declare non-scalar variables (`list`, `dict`, `set`) before the block where they
+  are first assigned, even if initially empty. This makes the expected type visible
+  before the logic that populates it (e.g. `dests` in `_normalize_destination()`
+  should be declared before the `if/elif/else` that assigns it). Exception: a
+  comprehension that both constructs and fully populates a variable in one expression
+  may be declared at use-time.
 
 ## Multiprocessing Pitfalls
 
@@ -143,6 +246,7 @@ tests/
     ├── queuelink_all_adapters_test.py
     ├── contentwrapper_test.py
     ├── writeout_test.py
+    ├── link_test.py                          # Tests for the link() factory function
     └── queuelink_throughput_test_exclude.py  # Benchmarks (excluded from CI)
 ```
 
@@ -169,6 +273,9 @@ tests/
 - **Start method filtering**: Start-method-parameterized tests are split across two tox
   phases. Include `forkserver`/`spawn` in test names or parameter IDs so tox's `-k`
   filters can separate them.
+- **`link()` tests use focused style (not matrix)**: `link()` abstracts queue-type and
+  start-method complexity, so focused unit/example tests are preferred. The matrix is
+  used only for explicit regression tests covering spawn/forkserver SemLock paths.
 
 ## Verifying Changes
 

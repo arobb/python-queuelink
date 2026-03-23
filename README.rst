@@ -45,6 +45,42 @@ Install
 
 Use
 ===
+
+Quick start with ``link()``
+---------------------------
+
+The ``link()`` factory function inspects your source and destination and wires everything
+up automatically — no need to choose between ``QueueLink``, ``QueueHandleAdapterReader``,
+or ``QueueHandleAdapterWriter`` by hand:
+
+.. code-block:: python
+
+    import queue
+    from queuelink import link
+
+    src = queue.Queue()
+    dst = queue.Queue()
+
+    # link() returns a result with stop(), close(), and is_alive()
+    result = link(src, dst)
+
+    src.put("hello")
+    print(dst.get())   # "hello"
+
+    result.stop()
+
+``link()`` accepts queues, file handles, file paths, and
+``multiprocessing.connection.Connection`` as source or destination. Pass a list for fan-out:
+
+.. code-block:: python
+
+    result = link(src, [dst1, dst2])   # fan-out to two queues
+
+Use ``QueueLink`` directly when you need fine-grained control (registering/unregistering
+queues at runtime, accessing metrics).
+
+With ``QueueLink`` directly
+---------------------------
 A QueueLink is a one-way process that connects queues together. When two or more queues are linked, a sub-process is started to read from the "source" queue and write into the "destination" queue.
 
 Circular references are not allowed.

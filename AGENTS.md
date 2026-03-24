@@ -250,6 +250,22 @@ tests/
     └── queuelink_throughput_test_exclude.py  # Benchmarks (excluded from CI)
 ```
 
+### Documentation example tests
+
+Every code example in a public-facing document (README.rst, docs/*.rst) must
+have a corresponding test in `tests/tests/link_examples_test.py` (for `link()`
+examples) or `tests/tests/queuelink_examples_test.py` (for direct `QueueLink`
+usage). The test should mirror the example code as closely as possible and
+include a docstring naming the source document and section.
+
+When adding or changing a doc example:
+1. Add or update the matching test before merging.
+2. Name the test after the example (e.g., `test_quick_start_queue_to_queue`).
+3. Add a docstring: `"""README: Quick start — basic queue→queue."""`
+
+This applies to README.rst and all files under `docs/`. It does not apply to
+internal comments or docstrings — only rendered public documentation.
+
 ### Test conventions
 
 - **Two valid test styles exist**:

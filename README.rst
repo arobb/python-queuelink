@@ -76,6 +76,36 @@ or ``QueueHandleAdapterWriter`` by hand:
 
     result = link(src, [dst1, dst2])   # fan-out to two queues
 
+Reading from a subprocess pipe into a queue:
+
+.. code-block:: python
+
+    import queue
+    from subprocess import Popen, PIPE
+    from queuelink import link
+
+    dest_q = queue.Queue()
+    proc = Popen(['myprogram'], stdout=PIPE, universal_newlines=True)
+
+    result = link(proc.stdout, dest_q)
+
+    line = dest_q.get()
+    result.stop()
+
+Writing from a queue to a file:
+
+.. code-block:: python
+
+    import queue
+    from queuelink import link
+
+    src_q = queue.Queue()
+
+    with open("output.txt", "w") as f:
+        result = link(src_q, f)
+        src_q.put("hello\n")
+        result.stop()
+
 Use ``QueueLink`` directly when you need fine-grained control (registering/unregistering
 queues at runtime, accessing metrics).
 
@@ -156,7 +186,7 @@ Primary methods
 ---------------------
 These methods are used most common use cases.
 
-* ``register_queue(q: UNION_SUPPORTED_QUEUES, direction: str, start_method: str=None) -> client id: str``
+* ``register_queue(q: UNION_SUPPORTED_QUEUES, direction: DIRECTION, start_method: str=None) -> client id: str``
 * ``stop``
 
 Secondary methods

@@ -28,32 +28,15 @@ All steps completed and validated. See git history for implementation.
 - [x] 12. Tests (`link_test.py`)
 - [x] 13. Validate (tox py313, full tox, pylint, bandit, docs)
 - [x] 14. Strict AGENTS.md compliance (enums, no @property misuse, specific exceptions)
-- [~] 15. **Update README.rst**: README already leads with `link()`, has basic queue→queue
-  and fan-out examples, and notes when to use `QueueLink` directly. Remaining:
-  - Add `link()` examples for handle/file-sourced patterns (file→queue, queue→file)
-  - Note: QueueLink examples live in `docs/index.rst`, not README — "move to Advanced
-    Usage" sub-goal is moot for README
-- [ ] 16. **Create docs/link_guide.rst**: Comprehensive usage guide with all patterns
-  - Getting started (basic queue→queue)
-  - Supported endpoint types (queues, files, handles, Connections)
-  - Fan-out patterns (single→multiple, mixed types)
-  - Result interface (`stop()`, `close()`, `is_alive()`)
-  - Advanced parameters (`start_method`, `thread_only`, `wrap_when`)
-  - Error handling (TypeError/ValueError cases)
-  - When to use `link()` vs direct classes (`QueueLink` is not deprecated — use it
-    when you need runtime queue registration, metrics, or fine-grained lifecycle control)
-  - ~~Migration guide~~ — do not frame as migration; `link()` is additive, not a replacement
-- [ ] 17. **Update docs/index.rst**: Current intro is entirely QueueLink-centric with no
-  mention of `link()`; toctree only contains `api`
-  - Add link_guide.rst to toctree after api.rst
-  - Update introductory text to present `link()` as the recommended starting point
-  - Add a brief `link()` quick-start example before the existing QueueLink examples
-- [ ] 18. **Validate rendered docs**: Build with sphinx and verify examples render correctly
-  - Run `tox -e docs` to build
-  - Verify all code blocks have correct syntax highlighting
-  - Check that autofunction picks up `link()` signature and docstring
-  - Ensure cross-references work (links to QueueLink, WRAP_WHEN, etc.)
-  - Visual inspection: examples are clear and properly formatted
+- [x] 15. **Update README.rst**: Added file→queue and queue→file `link()` examples.
+- [x] 16. **Create docs/link_guide.rst**: Comprehensive guide covering all patterns,
+  endpoint types, fan-out, result interface, advanced parameters, error handling,
+  and when to use link() vs direct classes.
+- [x] 17. **Update docs/index.rst**: Added `link_guide` and `publishing` to toctree;
+  added Quick Start section with `link()` example; updated intro to present `link()`
+  as recommended entry point. Also fixed pre-existing warning: `publishing.rst` was
+  not in any toctree (would have caused docs build failure).
+- [x] 18. **Validate rendered docs**: `tox -e docs` passes cleanly, no warnings.
 
 ### Usage Documentation (v1)
 

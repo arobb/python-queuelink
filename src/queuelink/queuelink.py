@@ -386,7 +386,7 @@ class QueueLink(ClassTemplate):
 
         Args:
             q: Queue object to register
-            direction: FROM or TO
+            direction: DIRECTION.FROM or DIRECTION.TO
 
         Returns:
             The client's ID for access to this queue

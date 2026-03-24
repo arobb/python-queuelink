@@ -580,7 +580,7 @@ class QueueLink(ClassTemplate):
         try:
             while not self.metrics_queue.empty():
                 self.metrics_queue.get_nowait()
-        except Exception:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except  # nosec B110 - queue state during teardown is unpredictable; best-effort drain, errors are irrelevant
             pass
 
     def _stop_publishers(self) -> None:

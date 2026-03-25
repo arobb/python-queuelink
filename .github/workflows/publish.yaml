@@ -26,13 +26,12 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Publish target'
+        description: 'Publish target (TestPyPI only; push a v* tag to publish to PyPI)'
         required: true
         default: 'testpypi'
         type: choice
         options:
           - testpypi
-          - pypi
 
 jobs:
   build:

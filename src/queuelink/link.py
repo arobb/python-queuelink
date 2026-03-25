@@ -387,8 +387,21 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
         elif all_queue_dests and not single_dest:
             # handle/path/connection → [queue, queue, ...]
             # reader → internal queue → QueueLink fan-out
+            # QueueLink must be fully wired before the reader starts, so that
+            # data arriving in internal_q is only consumed once all destination
+            # publishers are running (not by an intermediate single-dest publisher).
             internal_q = ctx.Queue()
             result._internal_queues.append(internal_q)
+
+            ql = QueueLink(
+                source=internal_q,
+                destination=dests,
+                name=name,
+                start_method=start_method,
+                thread_only=thread_only,
+                link_timeout=link_timeout,
+            )
+            result.queue_link = ql
 
             reader = QueueHandleAdapterReader(
                 queue=internal_q,
@@ -401,16 +414,6 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
                 wrap_threshold=wrap_threshold,
             )
             result.reader = reader
-
-            ql = QueueLink(
-                source=internal_q,
-                destination=dests,
-                name=name,
-                start_method=start_method,
-                thread_only=thread_only,
-                link_timeout=link_timeout,
-            )
-            result.queue_link = ql
 
         elif src_kind == _EndpointKind.CONNECTION:
             # Connection → mixed destinations: not supported in this version
@@ -448,20 +451,11 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
         else:
             # handle/path → [mixed destinations]
             # reader → internal queue → QueueLink → per-dest
+            # QueueLink and all per-destination writers must be fully wired
+            # before the reader starts, so no data is consumed by an
+            # intermediate publisher that only knows about a subset of dests.
             internal_q = ctx.Queue()
             result._internal_queues.append(internal_q)
-
-            reader = QueueHandleAdapterReader(
-                queue=internal_q,
-                handle=source,
-                name=name,
-                start_method=start_method,
-                thread_only=thread_only,
-                trusted=trusted,
-                wrap_when=wrap_when,
-                wrap_threshold=wrap_threshold,
-            )
-            result.reader = reader
 
             ql = QueueLink(
                 source=internal_q,
@@ -487,5 +481,17 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
                         thread_only=thread_only,
                     )
                     result.writers.append(writer)
+
+            reader = QueueHandleAdapterReader(
+                queue=internal_q,
+                handle=source,
+                name=name,
+                start_method=start_method,
+                thread_only=thread_only,
+                trusted=trusted,
+                wrap_when=wrap_when,
+                wrap_threshold=wrap_threshold,
+            )
+            result.reader = reader
 
     return result

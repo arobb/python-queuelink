@@ -17,23 +17,48 @@ The project source is available on `Github <https://github.com/arobb/python-queu
    :maxdepth: 1
    :caption: Contents
 
+   link_guide
    api
+   publishing
+
+Quick Start
+===========
+
+Use ``link()`` to connect a source and destination without choosing which
+underlying class to use:
+
+.. code-block:: python
+
+    import queue
+    from queuelink import link
+
+    src = queue.Queue()
+    dst = queue.Queue()
+
+    result = link(src, dst)
+    src.put("hello")
+    print(dst.get())   # "hello"
+    result.stop()
+
+``link()`` accepts queues, file handles, file paths, and
+``multiprocessing.connection.Connection`` objects, and handles fan-out to
+multiple destinations. See :doc:`link_guide` for the full guide.
 
 Introduction and Background
 ===========================
-The QueueLink library simplifies linking queues together with one-to-many or many-to-one relationships. "Adapters" support reading files handles and pipes into queues, and writing from queues into file handles and pipes.
+The QueueLink library simplifies linking queues together with one-to-many or many-to-one relationships. ``link()`` is the recommended entry point for most use cases — it inspects your source and destination types and wires up the correct combination of components automatically.
 
-A QueueLink instance is a one-way process that connects queues together. When two or more queues are linked, a separate process (or thread) is started to read from each "source" queue and write into the "destination" queues. (One process per source queue.)
+For cases requiring fine-grained control (runtime queue registration, metrics, drain checking), use ``QueueLink``, ``QueueHandleAdapterReader``, and ``QueueHandleAdapterWriter`` directly.
+
+A ``QueueLink`` instance is a one-way router that connects queues together. When two or more queues are linked, a separate process (or thread) is started to read from each "source" queue and write into the "destination" queues. (One process per source queue.)
 
 Circular references are not allowed.
 
-Users create each queue from the Queue or Multiprocessing libraries. Those queues can then be added to a QueueLink instance as either the source or destination.
-
-Adapters permit this type of linkage between handles and pipes and queues.
+Adapters permit linkage between file handles, pipes, and queues.
 
 Examples
 ========
-Some implementations of QueueLink connecting queues together.
+Some implementations connecting queues together directly with ``QueueLink``.
 
 These examples are validated during testing in `this test file <https://github.com/arobb/python-queuelink/blob/main/tests/tests/queuelink_examples_test.py>`_.
 

@@ -18,6 +18,9 @@ from queuelink.writeout import writeout
 from queuelink.queue_handle_adapter_reader import QueueHandleAdapterReader
 from queuelink.queue_handle_adapter_writer import QueueHandleAdapterWriter
 
+# Factory function
+from queuelink.link import link
+
 try:
     packages = packages_distributions()
     package_name = packages[__name__][0]

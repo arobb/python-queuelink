@@ -5,6 +5,11 @@ QueueLink Module API Documentation
 
 This page covers the QueueLink module interfaces.
 
+Factory Function
+----------------
+
+.. autofunction:: link
+
 QueueLink Class
 ---------------
 

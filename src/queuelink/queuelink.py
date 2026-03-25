@@ -78,7 +78,7 @@ class LimitedLengthQueue(object):
 
         self._queue = queue_instance
         self.max_size = max_size
-        self._queue_length = multiprocessing.Value(c_int, 0)
+        self._queue_length = self.multiprocessing_ctx.Value(c_int, 0)
 
         if not self._queue.empty():
             raise ValueError('Cannot start with a non-empty Queue!')
@@ -386,7 +386,7 @@ class QueueLink(ClassTemplate):
 
         Args:
             q: Queue object to register
-            direction: FROM or TO
+            direction: DIRECTION.FROM or DIRECTION.TO
 
         Returns:
             The client's ID for access to this queue
@@ -497,10 +497,10 @@ class QueueLink(ClassTemplate):
         dest_queues_dict = self.client_queues_destination
         destination_names = "-".join(dest_queues_dict.keys())
 
-        # Make sure we don't ovewrite a running Process
+        # Make sure we don't overwrite a running publisher (Process or Thread)
         try:
-            if self.client_pair_publishers[text(source_id)].exitcode is None:
-                raise ValueError("Cannot overwrite a running Process!")
+            if self.client_pair_publishers[text(source_id)].is_alive():
+                raise ValueError("Cannot overwrite a running publisher!")
 
         # If this is new, there won't be an existing value here
         except KeyError:
@@ -574,6 +574,13 @@ class QueueLink(ClassTemplate):
         # Clear the stop event so it can be reused if this publisher is restarted
         # (e.g., when a new destination queue is registered)
         stop_event.clear()
+
+        # Replace metrics_queue with a fresh instance so the next publisher always
+        # starts with a guaranteed-empty queue. Draining via empty()/get_nowait() is
+        # unreliable for multiprocessing.Queue: items written by the stopping publisher
+        # may still be in the feeder thread's buffer (not yet in the pipe), so empty()
+        # returns True while data is still pending. A replacement avoids the race.
+        self.metrics_queue = self.multiprocess_ctx.Queue()
 
     def _stop_publishers(self) -> None:
         """Stop all current publisher processes"""

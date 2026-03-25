@@ -1,12 +1,116 @@
 ---------
 QueueLink
 ---------
-The QueueLink library simplifies several queue patterns including linking queues together with one-to-many or many-to-one relationships. "Adapters" support reading and writing text-based files.
 
-Documentation: https://queuelink.readthedocs.io/en/latest/
+
+.. image:: https://github.com/arobb/python-queuelink/actions/workflows/ci.yaml/badge.svg
+   :target: https://github.com/arobb/python-queuelink/actions/workflows/ci.yaml
+   :alt: CI
+
+.. image:: https://img.shields.io/pypi/v/queuelink.svg
+   :target: https://pypi.org/project/queuelink/
+   :alt: PyPI
+
+.. image:: https://img.shields.io/pypi/pyversions/queuelink.svg
+   :target: https://pypi.org/project/queuelink/
+   :alt: Python versions
+
+.. image:: https://readthedocs.org/projects/queuelink/badge/?version=latest
+   :target: https://queuelink.readthedocs.io/en/latest/
+   :alt: Documentation
+
+Route messages between any combination of Python queues — fan-out, fan-in,
+or many-to-many — without the boilerplate.
+
+Why?
+====
+Connecting ``queue.Queue``, ``multiprocessing.Queue``, and
+``multiprocessing.Manager().Queue`` by hand means writing your own publisher
+loops, handling thread-vs-process selection, and dealing with edge cases like
+pipe size limits and clean shutdown. QueueLink handles all of that:
+
+* **Automatic thread/process selection** — detects whether your queues are thread-based or process-based and creates the right kind of link.
+* **Fan-out and fan-in** — one source to many destinations, many sources to one destination, or any combination.
+* **Handle adapters** — bridge subprocess pipes, file handles, and multiprocessing connections directly into your queue graph.
+* **Large-message spill-to-disk** — transparently buffers oversized objects to disk to avoid pipe size limits.
+* **Tested across fork, forkserver, and spawn** — CI runs a 25-job matrix across Linux, macOS, and Python 3.9–3.13.
+
+Install
+=======
+
+::
+
+    pip install queuelink
+
 
 Use
 ===
+
+Quick start with ``link()``
+---------------------------
+
+The ``link()`` factory function inspects your source and destination and wires everything
+up automatically — no need to choose between ``QueueLink``, ``QueueHandleAdapterReader``,
+or ``QueueHandleAdapterWriter`` by hand:
+
+.. code-block:: python
+
+    import queue
+    from queuelink import link
+
+    src = queue.Queue()
+    dst = queue.Queue()
+
+    # link() returns a result with stop(), close(), and is_alive()
+    result = link(src, dst)
+
+    src.put("hello")
+    print(dst.get())   # "hello"
+
+    result.stop()
+
+``link()`` accepts queues, file handles, file paths, and
+``multiprocessing.connection.Connection`` as source or destination. Pass a list for fan-out:
+
+.. code-block:: python
+
+    result = link(src, [dst1, dst2])   # fan-out to two queues
+
+Reading from a subprocess pipe into a queue:
+
+.. code-block:: python
+
+    import queue
+    from subprocess import Popen, PIPE
+    from queuelink import link
+
+    dest_q = queue.Queue()
+    proc = Popen(['myprogram'], stdout=PIPE, universal_newlines=True)
+
+    result = link(proc.stdout, dest_q)
+
+    line = dest_q.get()
+    result.stop()
+
+Writing from a queue to a file:
+
+.. code-block:: python
+
+    import queue
+    from queuelink import link
+
+    src_q = queue.Queue()
+
+    with open("output.txt", "w") as f:
+        result = link(src_q, f)
+        src_q.put("hello\n")
+        result.stop()
+
+Use ``QueueLink`` directly when you need fine-grained control (registering/unregistering
+queues at runtime, accessing metrics).
+
+With ``QueueLink`` directly
+---------------------------
 A QueueLink is a one-way process that connects queues together. When two or more queues are linked, a sub-process is started to read from the "source" queue and write into the "destination" queue.
 
 Circular references are not allowed.
@@ -82,7 +186,7 @@ Primary methods
 ---------------------
 These methods are used most common use cases.
 
-* ``register_queue(q: UNION_SUPPORTED_QUEUES, direction: str, start_method: str=None) -> client id: str``
+* ``register_queue(q: UNION_SUPPORTED_QUEUES, direction: DIRECTION, start_method: str=None) -> client id: str``
 * ``stop``
 
 Secondary methods

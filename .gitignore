@@ -8,3 +8,9 @@ venv*
 coverage
 .tox
 throughput
+
+# Claude Code local state (worktrees, memory, settings)
+# First un-ignore the directory so git will look inside it,
+# then re-ignore everything in it, then allow specific files.
+.claude/*
+!.claude/CLAUDE.md

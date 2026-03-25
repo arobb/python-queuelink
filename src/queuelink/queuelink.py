@@ -78,7 +78,7 @@ class LimitedLengthQueue(object):
 
         self._queue = queue_instance
         self.max_size = max_size
-        self._queue_length = multiprocessing.Value(c_int, 0)
+        self._queue_length = self.multiprocessing_ctx.Value(c_int, 0)
 
         if not self._queue.empty():
             raise ValueError('Cannot start with a non-empty Queue!')
@@ -575,13 +575,12 @@ class QueueLink(ClassTemplate):
         # (e.g., when a new destination queue is registered)
         stop_event.clear()
 
-        # Drain the shared metrics_queue so the next publisher can wrap it in
-        # a fresh LimitedLengthQueue (which requires an empty queue on init).
-        try:
-            while not self.metrics_queue.empty():
-                self.metrics_queue.get_nowait()
-        except Exception:  # pylint: disable=broad-except  # nosec B110 - queue state during teardown is unpredictable; best-effort drain, errors are irrelevant
-            pass
+        # Replace metrics_queue with a fresh instance so the next publisher always
+        # starts with a guaranteed-empty queue. Draining via empty()/get_nowait() is
+        # unreliable for multiprocessing.Queue: items written by the stopping publisher
+        # may still be in the feeder thread's buffer (not yet in the pipe), so empty()
+        # returns True while data is still pending. A replacement avoids the race.
+        self.metrics_queue = self.multiprocess_ctx.Queue()
 
     def _stop_publishers(self) -> None:
         """Stop all current publisher processes"""

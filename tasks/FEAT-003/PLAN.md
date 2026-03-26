@@ -99,11 +99,13 @@ excludes everything outside `src/queuelink/`.
 
 ---
 
-### Phase 2 — Fix `throughput_results.py` bugs
+### Phase 2 — Fix `throughput_results.py` bugs + add host context
 
-**Goal**: Make `ThroughputResults` and `ThroughputResultsOutput` actually work.
+**Goal**: Make `ThroughputResults` and `ThroughputResultsOutput` actually work, and
+capture enough host context alongside results that they are interpretable across machines.
 
-Tasks:
+#### Bug fixes
+
 1. Fix table creation: replace `cursor.execute('CREATE TABLE IF NOT EXISTS ?(?)', (tbl, schema))`
    with f-string interpolation. Table names and schema strings are defined as module-level
    constants — not user input — so f-string SQL is acceptable here (consistent with
@@ -115,6 +117,43 @@ Tasks:
    `os.path.join(os.path.dirname(__file__), 'throughput', 'throughput.sqlite.db')`.
    Create the parent directory automatically if it does not exist (`os.makedirs`).
 5. Propagate `db_path` from `Throughput_QueueLink` constructor through to `ThroughputResults`.
+
+#### Host context — schema addition
+
+Without knowing the machine the benchmarks ran on, results are hard to interpret.
+A result of "500 elements/second" is meaningless without knowing whether it came from
+a laptop under load or a dedicated server. The session table should capture enough
+host information to make results comparable.
+
+Add a `host_info` table (one row per session):
+
+```
+session_id, hostname, cpu_model, cpu_count, python_version, os_platform
+```
+
+All fields populated using stdlib only (`platform`, `os`, `sys`) — no new runtime
+dependencies:
+
+| Field | Source |
+|---|---|
+| `hostname` | `platform.node()` |
+| `cpu_model` | `platform.processor()` (may be empty on some platforms; acceptable) |
+| `cpu_count` | `os.cpu_count()` |
+| `python_version` | `sys.version` |
+| `os_platform` | `platform.platform()` |
+
+This row is written once per session in `ThroughputResults.__init__` alongside the
+existing `sessions` table entry.
+
+**What this gives users**: When comparing results across machines or Python versions,
+the `host_info` join tells them exactly what hardware and OS produced the numbers.
+The `python_version` column is redundant with the per-result column that already exists
+but is worth having at session scope for quick filtering.
+
+**What it does not give**: real-time load or memory pressure at run time. Those require
+`psutil` (not a current dependency) and add noise to results rather than explaining them.
+Document this limitation in `benchmarks/README.md` (Phase 6) with a note about
+running benchmarks on an otherwise-idle machine for most reproducible results.
 
 ---
 
@@ -182,11 +221,88 @@ session alongside `QueueLink` results.
 Tasks:
 1. Run `tox -e pylint` — confirm no regressions from the `src/` removal
 2. Run `tox -e bandit` — confirm clean (neither tool touches `benchmarks/`)
-3. Manual smoke test: run `python benchmarks/throughput_test_exclude.py` from repo root
-   for a single queue type / start method combination and confirm results are written
-   to the DB without error
-4. Run `python -m benchmarks.throughput_results` (or the `__main__` block) and confirm
-   results are printed correctly
+3. Manual smoke test: run a single queue type / start method combination end-to-end
+   and confirm results (including `host_info` row) are written to the DB without error
+4. Run `python benchmarks/throughput_results.py` (the `__main__` block) and confirm
+   results are printed correctly with host context visible
+
+---
+
+### Phase 6 — Runner documentation (`benchmarks/README.md`)
+
+**Goal**: Make it clear when to run the benchmarks, how to interpret results, and how
+host context affects the numbers.
+
+#### When to run
+
+Throughput benchmarks are **not** CI artefacts. They are developer tools for:
+
+1. **Pre-release baseline capture**: Run before tagging a release to establish a
+   performance baseline for that version. Store the DB output alongside the tag.
+2. **Change validation**: Run before and after a change suspected to affect throughput
+   (e.g., changes to `queuelink.py` publisher loop, `safe_get()`, adapter I/O path).
+   Compare the two sessions in the DB.
+3. **Environment profiling**: Run on a new machine or Python version to establish what
+   to expect for that environment.
+
+They should **not** run in standard CI because:
+- CI runners vary in available CPU, load, and OS configuration — results are not comparable
+- The full matrix (9 queue types × 3 start methods × 5 rounds × 3 test functions) is slow
+- Timing-sensitive tests produce flaky results in shared environments
+
+**If a consistent reference baseline is desired**, consider a manually-triggered
+GitHub Actions `workflow_dispatch` job pinned to a self-hosted or large runner, with
+results committed to a `benchmarks/results/` directory in the repo.
+
+#### How to interpret results
+
+The benchmark captures three metrics per (queue_type, start_method) combination:
+
+| Metric | What it measures | What affects it most |
+|---|---|---|
+| `time_to_first_element` | Startup latency (process/thread creation + first message) | start_method (spawn > forkserver > fork); queue type |
+| `avg_time_per_element` | Steady-state per-message latency after warmup | Queue type; OS scheduling |
+| `elements_per_second` | Sustained throughput; reported as actual vs baseline ratio | CPU speed; queue contention; start_method |
+
+**Key interpretation rule**: The `elements_per_second_queuelink_baseline` measures direct
+queue put/get speed on the same machine. The `_actual` result adds the QueueLink publisher
+in the middle. The ratio `actual / baseline` is the most comparable number across machines
+— it normalises out raw CPU speed and measures the overhead introduced by QueueLink itself.
+
+A ratio close to 1.0 means QueueLink adds negligible overhead. A ratio significantly below
+1.0 indicates the publisher loop or queue type is a bottleneck.
+
+#### How host context is recorded
+
+Each benchmark session writes a `host_info` row to the SQLite DB:
+
+```sql
+SELECT h.hostname, h.cpu_model, h.cpu_count, h.os_platform,
+       r.test_name, r.start_method, r.source, r.destination,
+       AVG(CAST(r.result AS REAL)) as avg_result, r.result_unit
+FROM results r
+JOIN host_info h ON r.session_id = h.session_id
+WHERE r.session_id = '<session_id>'
+GROUP BY r.test_name, r.start_method, r.source, r.destination, r.result_unit
+ORDER BY r.test_name, r.start_method;
+```
+
+This lets you join results to the machine that produced them when comparing across
+environments.
+
+#### Best practices for reproducible results
+
+- Run on an otherwise-idle machine (no concurrent browser, compilation jobs, etc.)
+- Use a consistent Python version (results vary across CPython releases)
+- Run the full 5-round parameterisation (default) and use the averaged result
+- Note: `spawn` and `forkserver` start methods are always slower than `fork` on first
+  element — this is expected (process startup cost), not a bug
+
+#### Tasks
+
+1. Create `benchmarks/README.md` with the above content
+2. Add a one-line note to the top-level `README.rst` pointing to `benchmarks/README.md`
+   for users interested in performance numbers
 
 ---
 

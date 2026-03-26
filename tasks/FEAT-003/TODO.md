@@ -13,7 +13,7 @@ Phases must complete in order. Do not start Phase N+1 until all Phase N tasks ar
 | 003-1-5 | Move `queuelink_throughput_test_exclude.py` to `benchmarks/`; fix imports | NOT_STARTED | benchmarks/throughput_test_exclude.py, tests/tests/queuelink_throughput_test_exclude.py |
 | 003-1-6 | Verify `tox -e pylint` and `tox -e bandit` pass after removal | NOT_STARTED | — |
 
-## Phase 2 — Fix `throughput_results.py` bugs
+## Phase 2 — Fix `throughput_results.py` bugs + host context
 
 | ID | Task | Status | Files |
 |----|------|--------|-------|
@@ -21,6 +21,7 @@ Phases must complete in order. Do not start Phase N+1 until all Phase N tasks ar
 | 003-2-2 | Fix INSERT parentheses (`VALUES (?, ?, ?)`) | NOT_STARTED | benchmarks/throughput_results.py |
 | 003-2-3 | Fix `get_latest_session_id()` len() bug | NOT_STARTED | benchmarks/throughput_results.py |
 | 003-2-4 | Make DB path configurable; auto-create parent directory | NOT_STARTED | benchmarks/throughput_results.py, benchmarks/throughput.py |
+| 003-2-5 | Add `host_info` table: hostname, cpu_model, cpu_count, python_version, os_platform | NOT_STARTED | benchmarks/throughput_results.py |
 
 ## Phase 3 — Fix `throughput.py` bugs
 
@@ -43,5 +44,12 @@ Phases must complete in order. Do not start Phase N+1 until all Phase N tasks ar
 | ID | Task | Status | Files |
 |----|------|--------|-------|
 | 003-5-1 | `tox -e pylint` and `tox -e bandit` pass (no src/ regressions) | NOT_STARTED | — |
-| 003-5-2 | Manual smoke test: run one queue type / start method end-to-end | NOT_STARTED | — |
+| 003-5-2 | Manual smoke test: run one queue type / start method end-to-end; verify host_info row written | NOT_STARTED | — |
 | 003-5-3 | Verify `throughput_results.py __main__` prints results correctly | NOT_STARTED | benchmarks/throughput_results.py |
+
+## Phase 6 — Runner documentation
+
+| ID | Task | Status | Files |
+|----|------|--------|-------|
+| 003-6-1 | Create `benchmarks/README.md`: when to run, how to interpret, host context, best practices | NOT_STARTED | benchmarks/README.md |
+| 003-6-2 | Add one-line pointer to `benchmarks/README.md` from top-level `README.rst` | NOT_STARTED | README.rst |

@@ -242,6 +242,6 @@ Resolved by FEAT-001. `link()` is fully implemented.
 | 10 | SimpleQueue polling latency undocumented | Low (docs) | Low | Open |
 | 11 | Metrics can stall publishers | Medium (reliability) | Medium | ✅ Resolved (FEAT-002) |
 | 12 | `ClassTemplate` naming | Low (clarity) | Low | Open |
-| 13 | Benchmarking code in package | Low (packaging) | Low | Open |
+| 13 | Benchmarking code in package | Low (packaging) | Low | In Progress (FEAT-003) |
 | 14 | `ContentWrapper` descriptor pattern undocumented | Low (maintainability) | Low | Open |
 | 15 | Broken import in `link.py` stub | Medium (correctness) | Low | ✅ Resolved (FEAT-001) |

@@ -1,0 +1,28 @@
+# FEAT-002 Progress
+
+- [x] Create tasks/FEAT-002/ with PLAN.md, TODO.md, PROGRESS.md
+- [x] Phase 1: Fix bugs and clean up metrics.py
+  - [x] 1.1 Move `data_points`/`name`/`max_points` to `BaseMetric.__init__`
+  - [x] 1.2 Fix `get_all_data()` key collision
+  - [x] 1.3 Remove duplicate `new_id()`
+  - [x] 1.4 Add `MetricType` enum
+  - [x] 1.5 Add `to_dict()` to metric classes
+- [x] Phase 2: Non-blocking metrics emission in queuelink.py
+  - [x] 2.1 `metrics_queue` with `maxsize=100`
+  - [x] 2.2 Replace `LimitedLengthQueue` with `put_nowait`
+  - [x] 2.3 Remove `start_method` from `_publisher` signature
+  - [x] 2.4 Use `MetricType` enum in `_publisher`
+- [x] Phase 3: Unit tests — `tests/tests/metrics_test.py`
+- [x] Phase 4: Integration test in `queuelink_test.py`
+- [x] Phase 5: Update task board and REVIEW-001
+- [x] Phase 6: Verification (tox + pylint + bandit) — 646 passed, bandit clean, pylint 9.81/10
+- [x] Phase 7: Post-review fixes (architectural review 2026-03-25)
+  - [x] 7.1 _emit_metrics(): pop oldest instead of drop newest
+  - [x] 7.2 get_metrics(): merge (update) not overwrite across thread/process queues
+  - [x] 7.3 _metrics_queue_process: lazy creation to avoid unnecessary OS resources
+  - [x] 7.4 import queue alias removed; dest_queues_dict type hint restored to Dict[str, ...]
+  - [x] 7.5 TimedMetric.start(): removed duplicated Timer default
+  - [x] 7.6 _update_mean(): replaced incremental formula with statistics.mean() to fix drift
+  - [x] 7.7 LimitedLengthQueue: marked as unused in docstring
+  - [x] 7.8 Added process-publisher integration test (spawn) in queuelink_test.py
+  - [x] 7.9 Verification: all 5 Python versions clean (py39–py313), pylint + bandit clean

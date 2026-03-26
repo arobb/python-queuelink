@@ -292,9 +292,147 @@ class QueueLinkTestCaseCombinations(unittest.TestCase):
     #                          f'threshold of {threshold} seconds.')
 
 
+class QueueLinkMetricsIntegrationTest(unittest.TestCase):
+    """Focused integration tests for QueueLink.get_metrics().
+
+    Not parameterized over queue types — this tests the metrics pipeline,
+    not queue-type compatibility.
+    """
+
+    def test_get_metrics_returns_data_after_stop(self):
+        """get_metrics() returns a non-empty snapshot after publisher stops.
+
+        The stop path always emits a final metrics snapshot, so even a single
+        message is enough to generate data.
+        """
+        src = queue.Queue()
+        dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        src.put('hello')
+        safe_get(dst, timeout=5)
+        ql.stop()
+
+        metrics = ql.get_metrics()
+
+        self.assertIsInstance(metrics, dict, "get_metrics() should return a dict")
+        self.assertGreater(len(metrics), 0, "get_metrics() should be non-empty after stop")
+
+        # Each value is a per-metric dict
+        for eid, data in metrics.items():
+            self.assertIsInstance(data, dict, f"element {eid} data should be a dict")
+
+    def test_get_metrics_counting_data_after_messages(self):
+        """After moving messages, the counting metric reflects the message count."""
+        msg_count = 150  # exceeds metric_interval=100 to trigger a periodic emission
+        src = queue.Queue()
+        dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        for i in range(msg_count):
+            src.put(f'msg_{i}')
+
+        for _ in range(msg_count):
+            safe_get(dst, timeout=10)
+
+        ql.stop()
+        metrics = ql.get_metrics()
+
+        # Find the counting metric entry
+        counting_data = [v for v in metrics.values() if 'count' in v]
+        self.assertGreater(len(counting_data), 0,
+                           "Expected at least one counting metric in get_metrics() result")
+
+        total_count = counting_data[0]['count']
+        self.assertGreaterEqual(total_count, msg_count,
+                                f"Counting metric should reflect at least {msg_count} messages")
+
+    def test_get_metrics_timing_data_after_messages(self):
+        """After moving messages, the timing metric has a positive mean latency."""
+        src = queue.Queue()
+        dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        for i in range(5):
+            src.put(f'msg_{i}')
+        for _ in range(5):
+            safe_get(dst, timeout=5)
+
+        ql.stop()
+        metrics = ql.get_metrics()
+
+        timing_data = [v for v in metrics.values() if 'mean' in v]
+        self.assertGreater(len(timing_data), 0,
+                           "Expected at least one timing metric in get_metrics() result")
+        self.assertGreater(timing_data[0]['mean'], 0,
+                           "Timing metric mean should be positive")
+
+    def test_get_metrics_returns_empty_dict_before_any_messages(self):
+        """get_metrics() returns an empty dict when no messages have been moved."""
+        src = queue.Queue()
+        dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        # Don't send any messages; don't stop
+        metrics = ql.get_metrics()
+        self.assertEqual(metrics, {})
+
+        ql.stop()
+
+    def test_get_metrics_keyed_by_element_id_not_flat(self):
+        """get_metrics() result must be keyed by element_id, not a flat merged dict.
+
+        Bug 2 regression: the old implementation merged dicts by key, so two elements
+        with a shared 'name' key would silently overwrite each other.
+        """
+        src = queue.Queue()
+        dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        src.put('hello')
+        safe_get(dst, timeout=5)
+        ql.stop()
+
+        metrics = ql.get_metrics()
+
+        # Every key should map to a dict (element data), not a scalar
+        for key, value in metrics.items():
+            self.assertIsInstance(value, dict,
+                                  f"Key '{key}' should map to a dict, got {type(value)}")
+
+
+class QueueLinkMetricsProcessPublisherSpawnTest(unittest.TestCase):
+    """Integration test for get_metrics() with a process-based publisher (spawn).
+
+    Named with 'spawn' so tox routes it to the serial phase (forkserver/spawn tests
+    cannot run under pytest-xdist fork workers).
+    """
+
+    def test_get_metrics_process_publisher_spawn(self):
+        """get_metrics() returns data when the publisher is a separate process (spawn).
+
+        Validates the _metrics_queue_process path end-to-end, including the feeder-thread
+        flush that occurs before process exit.
+        """
+        ctx = multiprocessing.get_context('spawn')
+        src = ctx.Queue()
+        dst = ctx.Queue()
+        ql = QueueLink(source=src, destination=dst, start_method='spawn')
+
+        src.put('hello')
+        safe_get(dst, timeout=30)
+        ql.stop()
+
+        metrics = ql.get_metrics()
+
+        self.assertIsInstance(metrics, dict, "get_metrics() should return a dict")
+        self.assertGreater(len(metrics), 0,
+                           "get_metrics() should be non-empty after a process publisher stops")
+
+        for eid, data in metrics.items():
+            self.assertIsInstance(data, dict, f"element {eid} data should be a dict")
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(QueueLinkTestCaseCombinations)
-    unittest.TextTestRunner(verbosity=2).run(suite)
-
-    suite = unittest.TestLoader().loadTestsFromTestCase()
     unittest.TextTestRunner(verbosity=2).run(suite)

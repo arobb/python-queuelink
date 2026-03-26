@@ -175,6 +175,35 @@ in `tasks/FEAT-NNN/`.
 - Include a reconciliation task as the final phase of each feature to check
   consistency across all docs before the feature is marked complete.
 
+## Documentation
+
+### Inline documentation
+
+- Every public class and method must have a docstring describing its purpose,
+  parameters, and return value. One-liners are fine for simple methods.
+- Module-level docstrings should include a minimal usage example when the
+  module's public interface is non-obvious (see `metrics.py` for the pattern).
+- Internal helpers (prefixed `_`) do not require docstrings unless the logic
+  warrants explanation.
+
+### User-facing documentation
+
+When a change introduces, removes, or materially changes a user-visible feature:
+
+1. **Update or create a `docs/` page.** New features that users interact with
+   directly (new public methods, new parameters, changed return shapes) need at
+   least a section in an existing page or a new page if the topic is substantial.
+2. **Add a pointer from `README.rst`** if the feature is worth surfacing in the
+   quick-reference methods list or the use section.
+3. **Keep `docs/index.rst` in sync** — add new pages to the toctree and update
+   any summary prose in the Introduction section.
+4. **Reconcile docs as the final phase of each feature.** Before marking a
+   feature DONE in `tasks/TODO.md`, verify that inline docstrings, `docs/`
+   pages, and README are consistent with the implementation.
+
+This rule applies to `README.rst` and all files under `docs/`. It does not
+apply to internal comments, task files, or this file itself.
+
 ## Coding Conventions
 
 - Python 3.9+ compatibility required (no `X | Y` unions, use `Union[X, Y]`)
@@ -265,6 +294,9 @@ When adding or changing a doc example:
 
 This applies to README.rst and all files under `docs/`. It does not apply to
 internal comments or docstrings — only rendered public documentation.
+
+For the broader requirement of when to write or update documentation in the
+first place, see the **Documentation** section above.
 
 ### Test conventions
 

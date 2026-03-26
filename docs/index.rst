@@ -18,6 +18,7 @@ The project source is available on `Github <https://github.com/arobb/python-queu
    :caption: Contents
 
    link_guide
+   metrics
    api
    publishing
 

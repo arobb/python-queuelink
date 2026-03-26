@@ -169,8 +169,9 @@ Result Interface
 
 ``queue_link``
     For queue-to-queue links, direct access to the underlying
-    :class:`QueueLink` instance. Useful for metrics, drain checking, or
-    runtime queue registration. ``None`` for adapter-only paths.
+    :class:`QueueLink` instance. Useful for drain checking, runtime queue
+    registration, or accessing metrics via ``get_metrics()`` (see
+    :doc:`metrics`). ``None`` for adapter-only paths.
 
 ``reader``
     The :class:`QueueHandleAdapterReader` instance, if one was created.
@@ -273,7 +274,7 @@ Use :class:`QueueLink` directly when you need:
 
 * Dynamic queue registration or unregistration at runtime (``read()`` /
   ``write()`` / ``unregister_queue()``)
-* Access to per-queue metrics (``get_metrics()``)
+* Access to per-link metrics (``get_metrics()`` — see :doc:`metrics`)
 * Drain checking (``is_drained()``, ``is_empty()``)
 * Destructive audit (``destructive_audit()``)
 

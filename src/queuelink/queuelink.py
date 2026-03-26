@@ -2,14 +2,15 @@
 """Manages the pull/push with queues"""
 from __future__ import unicode_literals
 
-from typing import List, Union
+from typing import Dict, List, Union
 
 import functools
 import logging
 
 from builtins import str as text
 from inspect import signature
-from queue import Empty
+import queue
+from queue import Empty, Full
 from threading import Thread  # For non-multi-processing queues
 
 # Multiprocessing imports
@@ -19,7 +20,7 @@ from ctypes import c_int
 # Internal imports
 from .classtemplate import ClassTemplate
 from .exceptionhandler import ProcessNotStarted
-from .metrics import Metrics
+from .metrics import Metrics, MetricType
 from .common import DIRECTION
 from .common import new_id, is_threaded, safe_get
 from .common import (
@@ -68,6 +69,10 @@ class LimitedLengthQueue(object):
     """Wrapper for an existing Queue to keep the length limited.
 
     NOT thread/process safe, only intended to be used by a single producer (i.e., Publishers).
+
+    NOTE: This class is not currently used in the codebase. The metrics path previously used
+    it but was replaced by bounded Queue(maxsize=) + put_nowait() in FEAT-002. Retained as a
+    general-purpose utility in case future callers need a bounded blocking wrapper.
     """
     def __init__(self,
                  queue_instance: multiprocessing.queues.Queue,
@@ -174,8 +179,12 @@ class QueueLink(ClassTemplate):
         self.client_pair_publishers = {}
         self.publisher_stops = {}
 
-        # Metrics
-        self.metrics_queue = self.multiprocess_ctx.Queue()
+        # Metrics — two queues to avoid feeder-thread races:
+        # Thread publishers use a threading queue (synchronous put, no feeder thread).
+        # Process publishers use a multiprocessing queue (cross-process safe), created
+        # lazily on first process-based publisher start to avoid unnecessary OS resources.
+        self._metrics_queue_thread = queue.Queue(maxsize=100)
+        self._metrics_queue_process = None
 
         # Short-circut usage
         if source:
@@ -216,7 +225,8 @@ class QueueLink(ClassTemplate):
                 self.stop()
 
         # Unset these variables to release any objects they held
-        unset_list = ['metrics_queue',  # Metrics
+        unset_list = ['_metrics_queue_thread',  # Metrics (thread publishers)
+                      '_metrics_queue_process',  # Metrics (process publishers)
                       'started',  # Started event
                       'queues_lock',  # Queues lock
                       'publisher_stops',  # Publisher stop events
@@ -262,20 +272,30 @@ class QueueLink(ClassTemplate):
         """Create a context-appropriate Queue"""
         return self.multiprocess_ctx.Queue(*args, **kwargs)
 
+    def _get_process_metrics_queue(self) -> UNION_MULTIPROCESSING_QUEUES:
+        """Return the metrics queue for process-based publishers, creating it on first call.
+
+        Deferred creation avoids allocating OS-level pipe resources on QueueLink instances
+        that only ever use thread-based publishers.
+        """
+        if self._metrics_queue_process is None:
+            self._metrics_queue_process = self.multiprocess_ctx.Queue(maxsize=100)
+
+        return self._metrics_queue_process
+
     def stop(self) -> None:
         """Use to stop somewhat gracefully"""
         self._stop_publishers()
 
     @staticmethod
-    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,  # pylint: disable=too-many-locals
+    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,
                    source_id: str,
                    source_queue: UNION_SUPPORTED_QUEUES,
-                   dest_queues_dict: dict[str, UNION_SUPPORTED_QUEUES],
+                   dest_queues_dict: Dict[str, UNION_SUPPORTED_QUEUES],
                    timeout: float,
                    metrics_queue: UNION_SUPPORTED_QUEUES,
-                   metric_interval: int=100,
-                   name: str=None,
-                   start_method: str=None) -> None:
+                   metric_interval: int = 100,
+                   name: str = None) -> None:
         """Move messages from the source queue to the destination queue
 
         Args:
@@ -284,11 +304,31 @@ class QueueLink(ClassTemplate):
             source_queue: Source queue object
             dest_queues_dict: Dictionary holding a set of destination queues
             timeout: How long to wait for a message
-            metrics_queue: Where to place metric instances
-            metric_interval: How many messages between metric emissions
+            metrics_queue: Where to place metric snapshots (bounded; when full the
+                oldest entry is evicted to make room for the newest)
+            metric_interval: How many messages between periodic metric emissions
             name: Name to use in logging
-            start_method: For multiprocess use: fork, spawn or forkserver
         """
+        def _emit_metrics():
+            """Emit a metrics snapshot, evicting the oldest entry if the queue is full.
+
+            Newer snapshots are more valuable than older ones — they reflect the most
+            recent timing and count data — so we prefer to keep the newest rather than
+            silently discard it.
+            """
+            data = metrics.get_all_data()
+            try:
+                metrics_queue.put_nowait(data)
+            except Full:
+                try:
+                    metrics_queue.get_nowait()  # evict oldest to make room
+                except Empty:
+                    pass  # consumer drained concurrently; next put will succeed
+                try:
+                    metrics_queue.put_nowait(data)
+                except Full:
+                    pass  # still full after eviction (race); accept the loss
+
         # Make a helpful logger name
         if name is None:
             logger_name = f'{__name__}.publisher.{source_id}'
@@ -302,19 +342,16 @@ class QueueLink(ClassTemplate):
         counter = 0
         metrics = Metrics()
 
-        latency_metric_id = metrics.add_element(metric_type='timing', name='pipe latency')
+        latency_metric_id = metrics.add_element(MetricType.TIMING, name='pipe latency')
         metrics.start(latency_metric_id)
-        metrics_queue_limited = LimitedLengthQueue(queue_instance=metrics_queue,
-                                                   max_size=100,
-                                                   start_method=start_method)
 
-        counting_metric_id = metrics.add_element(metric_type='counting', name='movement count')
+        counting_metric_id = metrics.add_element(MetricType.COUNTING, name='movement count')
 
         while True:
             # Check for stop
             if stop_event.is_set():
                 log.info("Stopping due to stop event")
-                metrics_queue_limited.put(metrics.get_all_data())
+                _emit_metrics()
                 return
 
             try:
@@ -339,7 +376,7 @@ class QueueLink(ClassTemplate):
 
                 # Send metric info
                 if counter % metric_interval == 0:
-                    metrics_queue_limited.put(metrics.get_all_data())
+                    _emit_metrics()
 
             except Empty:
                 log.debug("No lines to get from source in pair %s", source_id)
@@ -529,16 +566,22 @@ class QueueLink(ClassTemplate):
         Parallel = Thread if threaded or self.thread_only else self.Process
         # pylint: enable=invalid-name
 
+        # Thread publishers use the threading queue (no feeder-thread race);
+        # process publishers use the multiprocessing queue (cross-process safe).
+        metrics_q = (self._metrics_queue_thread
+                     if (threaded or self.thread_only)
+                     else self._get_process_metrics_queue())
+
         # Start the publisher
         proc = Parallel(target=self._publisher,
                         name=process_name,
                         kwargs={"name": self.name,
-                               "stop_event": stop_event,
-                               "source_id": source_id,
-                               "source_queue": source_queue,
-                               "dest_queues_dict": dest_queues_dict,
-                               "timeout": self.link_timeout,
-                               "metrics_queue": self.metrics_queue})
+                                "stop_event": stop_event,
+                                "source_id": source_id,
+                                "source_queue": source_queue,
+                                "dest_queues_dict": dest_queues_dict,
+                                "timeout": self.link_timeout,
+                                "metrics_queue": metrics_q})
         proc.daemon = True
         proc.start()
         self.started.set()
@@ -575,12 +618,11 @@ class QueueLink(ClassTemplate):
         # (e.g., when a new destination queue is registered)
         stop_event.clear()
 
-        # Replace metrics_queue with a fresh instance so the next publisher always
-        # starts with a guaranteed-empty queue. Draining via empty()/get_nowait() is
-        # unreliable for multiprocessing.Queue: items written by the stopping publisher
-        # may still be in the feeder thread's buffer (not yet in the pipe), so empty()
-        # returns True while data is still pending. A replacement avoids the race.
-        self.metrics_queue = self.multiprocess_ctx.Queue()
+        # Metrics queues are intentionally NOT replaced here. They persist across
+        # publisher restarts so that data emitted by the stopping publisher remains
+        # available to get_metrics(). The bounded maxsize=100 on each queue ensures
+        # that restarted publishers' put_nowait calls discard safely if the consumer
+        # falls behind.
 
     def _stop_publishers(self) -> None:
         """Stop all current publisher processes"""
@@ -733,17 +775,27 @@ class QueueLink(ClassTemplate):
                     self._log.info("queue_id %s is empty", text(q_id))
 
     def get_metrics(self) -> dict:
-        """Retrieve metrics about the link
+        """Retrieve accumulated metrics from all publishers.
 
-        :returns dict
+        Drains both the thread and process metrics queues and merges all
+        snapshots by element_id. Because each snapshot is keyed by element_id,
+        later snapshots for the same element overwrite earlier ones, so the
+        result reflects the most recent data for each metric element. Returns
+        an empty dict if no metrics have been emitted yet.
+
+        :returns dict mapping element_id -> metric data dict
         """
         value = {}
 
-        try:
-            while True:
-                value = self.metrics_queue.get_nowait()
+        queues = [self._metrics_queue_thread]
+        if self._metrics_queue_process is not None:
+            queues.append(self._metrics_queue_process)
 
-        except Empty:
-            pass
+        for mq in queues:
+            try:
+                while True:
+                    value.update(mq.get_nowait())
+            except Empty:
+                pass
 
         return value

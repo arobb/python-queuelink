@@ -13,6 +13,7 @@ All work is registered here. Features appear as a single row with detail in `tas
 | FEAT-005 | Documentation and naming clarity         | NOT_STARTED | None            | 2026-03-26 | src/queuelink/common.py, src/queuelink/queuelink.py, docs/*.rst                                                    |
 | FEAT-006 | Encoding strategy consistency            | NOT_STARTED | None            | 2026-03-26 | src/queuelink/queue_handle_adapter_reader.py, src/queuelink/queue_handle_adapter_writer.py, src/queuelink/writeout.py, src/queuelink/contentwrapper.py |
 | FEAT-007 | Publisher restart on new destination     | NOT_STARTED | None            | 2026-03-26 | src/queuelink/queuelink.py                                                                                         |
+| FEAT-008 | Windows support                          | NOT_STARTED | None            | 2026-03-26 | src/queuelink/common.py, setup.cfg, .github/workflows/ci.yaml                                                      |
 
 
 ## Phases
@@ -34,4 +35,5 @@ See `tasks/FEAT-NNN/TODO.md` for phase breakdowns and individual tasks.
 - FEAT-005: Triage of REVIEW-001 items 9, 10, 12, 14. Doc/comment/naming fixes only.
 - FEAT-006: Triage of REVIEW-001 items 7, 8. Encoding strategy unification across adapters.
 - FEAT-007: Triage of REVIEW-001 item 3. High-effort design work; needs scoping before start.
+- FEAT-008: Windows support. Blocked on Phase 1 audit (kitchen/kitchenpatch Windows compat). May depend on FEAT-006 landing first. Plan in tasks/FEAT-008/PLAN.md.
 - REVIEW-001 items 3, 5–10, 12, 14 triaged into FEAT-004 through FEAT-007 above.

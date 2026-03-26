@@ -2,60 +2,77 @@
 """Class to handle metrics for QueueLink
 
 from time import sleep
-from metrics import Metrics
+from queuelink.metrics import Metrics, MetricType
 
 metrics = Metrics()
-id = metrics.add_element(type='timing', name='')
+id = metrics.add_element(MetricType.TIMING, name='')
 metrics.start(id)
 sleep(1)
 metrics.lap(id)
 out = metrics.get_all_data()
-out{ id: {'name': None, 'data_point_count': 2, 'mean': int, 'median': int, 'stddev': int} }
+out == { id: {'name': None, 'data_point_count': 2, 'mean': float, 'median': float, 'stddev': float} }
 
 metrics = Metrics()
-id = metrics.add_element(type='counting', name='')
+id = metrics.add_element(MetricType.COUNTING, name='')
 metrics.increment(id)
 out = metrics.get_all_data()
-out{ id: {'name': None, 'count': 1} }
+out == { id: {'name': None, 'count': 1} }
 """
 from __future__ import unicode_literals
 from __future__ import annotations
 
-import random
 import statistics
+from enum import Enum
 
 from .classtemplate import ClassTemplate
+from .common import new_id
 from .timer import Timer
 
 
+class MetricType(Enum):
+    """Supported metric types"""
+    TIMING = 'timing'
+    COUNTING = 'counting'
+
+
 class BaseMetric(ClassTemplate):  # pylint: disable=too-few-public-methods
-    """Abstract class for QueueLink monitoring metrics"""
-    name = ""
-    data_points = []
-    max_points = 100
+    """Base class for QueueLink monitoring metrics"""
+
+    def __init__(self, name: str = None, max_points: int = 100):
+        self.name = name
+        self.max_points = max_points
+        self._initialize_logging_with_log_name(__name__)
+
 
 class CountMetric(BaseMetric):
     """Monitoring metric for counter-based information"""
-    count = 0
 
-    def __init__(self, name: str=None):
-        self.name = name
-        self._initialize_logging_with_log_name(__name__)
+    def __init__(self, name: str = None):
+        super().__init__(name=name)
+        self.count = 0
 
     def increment(self):
         """Add 1 to the internal counter"""
         self.count += 1
 
+    def to_dict(self) -> dict:
+        """Serialize this metric to a plain dict"""
+        return {
+            'name': self.name,
+            'count': self.count,
+        }
+
+
 class TimedMetric(BaseMetric):
     """Monitoring metric for timing information"""
-    mean = 0.0
-    median = 0.0
-    stddev = 0.0
 
-    def __init__(self, name: str=None, interval: float=None):
-        self.name = name
+    def __init__(self, name: str = None, interval: float = None):
+        super().__init__(name=name)
         self.interval = interval
-        self._initialize_logging_with_log_name(__name__)
+        self.data_points = []
+        self.mean = 0.0
+        self.median = 0.0
+        self.stddev = 0.0
 
         # Set at various times
         self.timer = None
@@ -64,7 +81,8 @@ class TimedMetric(BaseMetric):
 
     def start(self):
         """Start timing"""
-        self.timer = Timer(interval=self.interval)
+        kwargs = {} if self.interval is None else {'interval': self.interval}
+        self.timer = Timer(**kwargs)
         self.start_time_epoch = self.timer.start_time
         self.last_lap = 0
 
@@ -83,16 +101,13 @@ class TimedMetric(BaseMetric):
             self._log.debug('Max value count reached, removed oldest data point "%s"', removed)
 
         self.data_points.append(new_value)
-        self._update_mean(new_value)
+        self._update_mean()
         self._update_median()
         self._update_stddev()
 
-    def _update_mean(self, new_value):
+    def _update_mean(self):
         """Update the average across the available data points"""
-        intermediate = self.mean * (len(self.data_points) - 1)
-        self.mean = (intermediate + new_value) / len(self.data_points)
-
-        return self.mean
+        self.mean = statistics.mean(self.data_points)
 
     def _update_median(self):
         """Update the median across the available data points"""
@@ -102,14 +117,25 @@ class TimedMetric(BaseMetric):
         """Update the standard deviation across the available data points"""
         self.stddev = statistics.pstdev(self.data_points)
 
+    def to_dict(self) -> dict:
+        """Serialize this metric to a plain dict"""
+        return {
+            'name': self.name,
+            'data_point_count': len(self.data_points),
+            'mean': self.mean,
+            'median': self.median,
+            'stddev': self.stddev,
+        }
+
 
 class Metrics(ClassTemplate):
     """Managing multiple metric instances and retrieving values"""
+
     def __init__(self,
-                 name: str=None,
-                 log_name: str=None):
+                 name: str = None,
+                 log_name: str = None):
         # Unique ID
-        self.id = self.new_id()
+        self.id = new_id()
 
         self.name = name
         self.log_name = log_name
@@ -118,30 +144,32 @@ class Metrics(ClassTemplate):
         # Element management
         self.elements = {}
 
-    def new_id(self) -> str:
-        """Get new 6-digit hexadecimal ID string (0-9, A-F)
+    def add_element(self, metric_type: MetricType, name: str = None) -> str:
+        """Add a new metric element
 
-        :return str
+        Args:
+            metric_type: MetricType.TIMING or MetricType.COUNTING
+            name: Optional human-readable name for this element
+
+        Returns:
+            element_id string for all future interactions with this element
+
+        Raises:
+            ValueError: if metric_type is not a recognised MetricType
         """
-        return ''.join([random.choice(  # nosec
-                '0123456789ABCDEF') for x in range(6)])
-
-    def add_element(self, metric_type: str, name: str = None) -> str:
-        """timing or counting"""
-        element_id = self.new_id()
+        element_id = new_id()
         while element_id in self.elements:
-            element_id = self.new_id()
-            self._log.warning('Element ID: %s', str(element_id))
+            element_id = new_id()
+            self._log.warning('Element ID collision, retrying: %s', str(element_id))
 
-        if metric_type == 'timing':
+        if metric_type == MetricType.TIMING:
             m = TimedMetric(name=name)
-        elif metric_type == 'counting':
+        elif metric_type == MetricType.COUNTING:
             m = CountMetric(name=name)
         else:
             raise ValueError(f'Unknown metric type "{metric_type}"')
 
-        self.elements[element_id] = {'name': name,
-                                     'metrics': m}
+        self.elements[element_id] = {'name': name, 'metrics': m}
 
         return element_id
 
@@ -150,7 +178,7 @@ class Metrics(ClassTemplate):
         self.elements[element_id]['metrics'].start()
 
     def lap(self, element_id: str):
-        """Update timing metrics based on a recurring event occurence"""
+        """Update timing metrics based on a recurring event occurrence"""
         self.elements[element_id]['metrics'].lap()
 
     def increment(self, element_id: str):
@@ -163,31 +191,12 @@ class Metrics(ClassTemplate):
 
     def get_data(self, element_id: str) -> dict:
         """Retrieve values related to a metric instance"""
-        element = self.get(element_id)
-        m = {}
-
-        if isinstance(element, TimedMetric):
-            m['name'] = element.name
-            m['data_point_count'] = len(element.data_points)
-
-            measures = ['mean', 'median', 'stddev']
-            for measure in measures:
-                m[measure] = getattr(element, measure)
-
-        if isinstance(element, CountMetric):
-            m['name'] = element.name
-            m['count'] = element.count
-
-        return m
+        return self.get(element_id).to_dict()
 
     def get_all_data(self) -> dict:
-        """Retrieve data related to all metric instances
+        """Retrieve data for all metric instances, keyed by element_id
 
-        :returns dict
+        Returns:
+            dict mapping element_id -> metric data dict
         """
-        data_list = []
-
-        for element_id in self.elements:
-            data_list.append(self.get_data(element_id))
-
-        return {k: v for d in data_list for k, v in d.items()}
+        return {eid: self.get_data(eid) for eid in self.elements}

@@ -12,7 +12,7 @@ to `tasks/TODO.md` entries (features or standalone tasks) before being actioned.
 
 ## Bugs
 
-### 1. `BaseMetric.data_points` is a mutable class attribute (metrics.py:34)
+### 1. `BaseMetric.data_points` is a mutable class attribute (metrics.py:34) ✅ Resolved (FEAT-002)
 
 ```python
 class BaseMetric(ClassTemplate):
@@ -37,7 +37,7 @@ list is not.
 
 ---
 
-### 2. `Metrics.get_all_data()` merges keys destructively (metrics.py:183–193)
+### 2. `Metrics.get_all_data()` merges keys destructively (metrics.py:183–193) ✅ Resolved (FEAT-002)
 
 ```python
 return {k: v for d in data_list for k, v in d.items()}
@@ -83,7 +83,7 @@ is a meaningful refactor that should be its own tracked item.
 
 ---
 
-### 4. `Metrics.new_id()` duplicates `common.new_id()` (metrics.py:121–127)
+### 4. `Metrics.new_id()` duplicates `common.new_id()` (metrics.py:121–127) ✅ Resolved (FEAT-002)
 
 Identical 6-char hex ID generation logic exists in `common.py` (`new_id()`),
 `_QueueHandleAdapterBase.__init__`, and `Metrics.new_id()`. There is a single
@@ -174,7 +174,7 @@ users selecting SimpleQueue understand the cost.
 
 ---
 
-### 11. Metrics collection can stall publishers under load
+### 11. Metrics collection can stall publishers under load ✅ Resolved (FEAT-002)
 
 The publisher emits metrics by calling `metrics_queue.put()` in its main loop.
 If the metrics consumer falls behind and the queue fills, the publisher blocks on
@@ -230,17 +230,17 @@ Resolved by FEAT-001. `link()` is fully implemented.
 
 | # | Area | Severity | Effort | Status |
 |---|---|---|---|---|
-| 1 | `data_points` class attribute bug | **High** (correctness) | Low | Open |
-| 2 | `get_all_data()` key collision bug | **High** (correctness) | Low | Open |
+| 1 | `data_points` class attribute bug | **High** (correctness) | Low | ✅ Resolved (FEAT-002) |
+| 2 | `get_all_data()` key collision bug | **High** (correctness) | Low | ✅ Resolved (FEAT-002) |
 | 3 | Destination change restarts all publishers | Medium (performance) | High | Open |
-| 4 | Duplicate `new_id()` | Low (cleanliness) | Low | Open |
+| 4 | Duplicate `new_id()` | Low (cleanliness) | Low | ✅ Resolved (FEAT-002) |
 | 5 | `ExceptionHandler` naming confusion | Low (clarity) | Low | Open |
 | 6 | `is_alive()` raises instead of returning False | Low (API consistency) | Low | Open |
 | 7 | Encoding strategy inconsistency | Medium (correctness risk) | Medium | Open |
 | 8 | Binary mode detection fragility | Medium (correctness risk) | Low | Open |
 | 9 | `link_timeout` doc/code mismatch | Low (docs) | Low | Open |
 | 10 | SimpleQueue polling latency undocumented | Low (docs) | Low | Open |
-| 11 | Metrics can stall publishers | Medium (reliability) | Medium | Open |
+| 11 | Metrics can stall publishers | Medium (reliability) | Medium | ✅ Resolved (FEAT-002) |
 | 12 | `ClassTemplate` naming | Low (clarity) | Low | Open |
 | 13 | Benchmarking code in package | Low (packaging) | Low | Open |
 | 14 | `ContentWrapper` descriptor pattern undocumented | Low (maintainability) | Low | Open |

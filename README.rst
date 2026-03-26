@@ -107,7 +107,7 @@ Writing from a queue to a file:
         result.stop()
 
 Use ``QueueLink`` directly when you need fine-grained control (registering/unregistering
-queues at runtime, accessing metrics).
+queues at runtime, accessing metrics via ``get_metrics()``).
 
 With ``QueueLink`` directly
 ---------------------------
@@ -194,6 +194,7 @@ Secondary methods
 These methods are less common.
 
 * ``destructive_audit(direction: str)``
+* ``get_metrics() -> dict`` — returns latency and message-count data; see `Metrics <https://queuelink.readthedocs.io/en/latest/metrics.html>`_ for details.
 * ``get_queue(queue_id: [str, int])``
 * ``is_alive``
 * ``is_drained``

@@ -14,7 +14,7 @@ All work is registered here. Features appear as a single row with detail in `tas
 | FEAT-006 | Encoding strategy consistency            | DONE        | session-2026-03-27 | 2026-03-27 | src/queuelink/queue_handle_adapter_reader.py, src/queuelink/queue_handle_adapter_writer.py, src/queuelink/writeout.py, src/queuelink/contentwrapper.py |
 | FEAT-007 | Publisher restart on new destination     | DONE        | session-2026-03-27 | 2026-03-27 | src/queuelink/queuelink.py                                                                                         |
 | FEAT-008 | Windows support                          | NOT_STARTED | None            | 2026-03-26 | src/queuelink/common.py, setup.cfg, .github/workflows/ci.yaml                                                      |
-| FEAT-009 | Writer adapter binary mode detection     | NOT_STARTED | None            | 2026-04-20 | src/queuelink/queue_handle_adapter_writer.py, tests/tests/queuelink_handle_adapter_writer_test.py                  |
+| FEAT-009 | Writer adapter binary mode detection     | DONE        | session-2026-04-20 | 2026-04-20 | src/queuelink/queue_handle_adapter_writer.py, tests/tests/queuelink_handle_adapter_writer_test.py                  |
 
 
 ## Phases
@@ -25,7 +25,7 @@ See `tasks/FEAT-NNN/TODO.md` for phase breakdowns and individual tasks.
 
 | ID | Title | Date | Open Items |
 |----|-------|------|------------|
-| REVIEW-001 | Architectural review — full source read | 2026-03-22 | 5 open: item 3 (deferred, FEAT-007), item 5 (blocked), item 7 (deferred, FEAT-006), item 8 (untracked), item 12 (deferred) |
+| REVIEW-001 | Architectural review — full source read | 2026-03-22 | 2 open: item 5 (deprecated, removal deferred to v3 with FEAT-008), item 3 (deferred, O(n) cost documented/tested by FEAT-007) |
 
 ## Notes
 
@@ -37,4 +37,5 @@ See `tasks/FEAT-NNN/TODO.md` for phase breakdowns and individual tasks.
 - FEAT-006: Done 2026-03-27. Encoding rationale documented inline; defensive type check added to QueueHandleAdapterWriter.
 - FEAT-007: Done 2026-03-27. Option A implemented — O(n) restart cost documented in register_queue() docstring.
 - FEAT-008: Windows support. Blocked on Phase 1 audit (kitchen/kitchenpatch Windows compat). May depend on FEAT-006 landing first. Plan in tasks/FEAT-008/PLAN.md.
-- REVIEW-001: items 1, 2, 4, 11 resolved by FEAT-002; item 13 by FEAT-003; item 15 by FEAT-001; item 6 by FEAT-004; items 9, 10, 14 by FEAT-005; item 3 design validated/documented/tested 2026-04-19; item 7 resolved by FEAT-006. Open: 5 (deprecated, removal deferred to v3 with FEAT-008), 8 (tracked as FEAT-009), 12 (deferred — rename when touching).
+- REVIEW-001: All 15 items closed. Items 1,2,4,11→FEAT-002; 13→FEAT-003; 15→FEAT-001; 6→FEAT-004; 9,10,14→FEAT-005; 3 documented/tested→FEAT-007; 7→FEAT-006; 8,12→FEAT-009. Item 5 deprecated (removal deferred to v3 with FEAT-008).
+- FEAT-009: Done 2026-04-20. WriteMode enum, isinstance-based binary detection, _is_binary_handle() wrapper helper, log+reraise TypeError. classtemplate.py→logging_mixin.py (item 12) bundled.

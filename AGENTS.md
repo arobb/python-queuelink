@@ -207,10 +207,50 @@ When a change introduces, removes, or materially changes a user-visible feature:
    any summary prose in the Introduction section.
 4. **Reconcile docs as the final phase of each feature.** Before marking a
    feature DONE in `tasks/TODO.md`, verify that inline docstrings, `docs/`
-   pages, and README are consistent with the implementation.
+   pages, README, and `CHANGELOG.rst` are consistent with the implementation.
 
-This rule applies to `README.rst` and all files under `docs/`. It does not
-apply to internal comments, task files, or this file itself.
+This rule applies to `README.rst`, `CHANGELOG.rst`, and all files under
+`docs/`. It does not apply to internal comments, task files, or this file
+itself.
+
+### Changelog
+
+``CHANGELOG.rst`` at the repo root is the single source of truth for
+user-visible changes. It is included verbatim in PyPI's long description and
+rendered in the Sphinx docs at ``docs/changelog.rst``.
+
+**Format** — `Keep a Changelog <https://keepachangelog.com/en/1.1.0/>`_:
+
+- Top section is always **Unreleased** — add entries here while work is in
+  progress on a branch.
+- Each released version gets its own section headed ``vX.Y.Z — YYYY-MM-DD``.
+- Within each section, group entries under: ``Added``, ``Changed``,
+  ``Deprecated``, ``Removed``, ``Fixed``, ``Security``.  Omit empty groups.
+- Write entries from the *user's* perspective — what they can now do, what
+  changed for them, what was fixed. Reference FEAT-NNN for traceability but
+  lead with the effect, not the ticket number.
+
+**When to update** — update ``CHANGELOG.rst`` as part of the feature work,
+not after. The reconciliation step (final phase of each feature) must include
+a changelog entry. Specifically:
+
+- **Added**: new public classes, methods, parameters, or CLI flags.
+- **Changed**: behavioural changes to existing public API (even if
+  backwards-compatible).
+- **Deprecated**: anything marked deprecated in code or docs.
+- **Removed**: anything deleted from the public API.
+- **Fixed**: user-visible bugs. Internal refactors that do not change
+  observable behaviour do not need a changelog entry.
+
+**On release** — when a git tag is applied, move the *Unreleased* entries into
+a new versioned section immediately below. The *Unreleased* section should then
+be left empty (but present) for the next batch of changes.
+
+Do not add changelog entries for:
+- Internal renames with no public API effect.
+- Pure task-tracking or documentation-only changes (unless they fix incorrect
+  user-facing docs).
+- CI / tox / tooling changes invisible to library users.
 
 ## Coding Conventions
 

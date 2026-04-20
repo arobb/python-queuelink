@@ -418,6 +418,19 @@ class QueueLink(ClassTemplate):
         For a new ``TO`` (destination) queue, all new additions to source queues
         will be added to this queue.
 
+        **Consistency guarantee**: after this call returns, every message put to
+        any source queue will be delivered to *all* currently registered destinations,
+        including the one just added. This guarantee is enforced by stopping every
+        active publisher, updating the destination dict, and restarting each publisher
+        with the complete list before returning.
+
+        With *n* source queues, adding one destination causes *n* publisher restarts.
+        For spawn/forkserver start methods, each restart incurs process-creation overhead;
+        for thread-based publishers the cost is minimal. This is negligible when
+        destinations are configured at startup and sources are few. Prefer registering
+        all destinations before sending messages if dynamic registration at high
+        throughput is a concern.
+
         Returns the numeric ID for the queue reference, which must be used in all
         future interactions.
 
@@ -714,19 +727,20 @@ class QueueLink(ClassTemplate):
             return empty
 
     def is_alive(self) -> bool:
-        """Whether all of the publishers are alive
+        """Whether all of the publishers are alive.
+
+        Follows the same convention as ``threading.Thread.is_alive()`` and
+        ``multiprocessing.Process.is_alive()``: returns ``False`` rather than
+        raising when no publishers have ever been started.
 
         Returns:
-            False if any publisher has stopped
-
-        Raises:
-            ProcessNotStarted if we've never started a publisher
+            False if no publishers have ever been started, or if any publisher
+            has stopped. True only when all publishers are currently running.
         """
-        alive = True
-
         if not self.started.is_set():
-            raise ProcessNotStarted(f'{self.name} has not started')
+            return False
 
+        alive = True
         for proc in self.client_pair_publishers.values():
             alive = alive and proc.is_alive()
 

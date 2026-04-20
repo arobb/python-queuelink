@@ -6,6 +6,7 @@ import queue
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from typing import Union
@@ -263,6 +264,80 @@ class QueueLinkHandleAdapterReaderTestCase(unittest.TestCase):
                                          f"{get_len(text_in)}) is over threshold ("
                                          f"{ContentWrapper.THRESHOLD}), but return is not a "
                                          "ContentWrapper")
+
+
+    def _require_fifo_queue(self):
+        """Skip the calling test if the parameterized queue does not guarantee FIFO delivery.
+
+        LifoQueue and PriorityQueue return items in non-insertion order.  Binary
+        chunk tests reassemble data by joining chunks in retrieval order, so they
+        are only valid for FIFO queues.
+        """
+        non_fifo = ('LifoQueue', 'PriorityQueue')
+        if self.queue_class in non_fifo:
+            self.skipTest(
+                f'Binary chunk ordering requires a FIFO queue; '
+                f'{self.queue_class} does not preserve insertion order')
+
+    def movement_binary_file(self, binary_data: bytes, chunk_size: int):
+        """Write binary_data to a temp file and read back via chunk_size reader."""
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.bin')
+        tmp.write(binary_data)
+        tmp.flush()
+        tmp.close()
+        tmp_path = tmp.name
+
+        dest_q = self.queue_factory()
+        chunks = []
+
+        try:
+            read_adapter = QueueHandleAdapterReader(
+                dest_q,
+                handle=tmp_path,
+                start_method=self.start_method,
+                chunk_size=chunk_size)
+
+            # Read exactly as many chunks as the data divides into
+            expected = (len(binary_data) + chunk_size - 1) // chunk_size
+            for _ in range(expected):
+                try:
+                    chunk = safe_get(queue_obj=dest_q, timeout=self.timeout)
+                    if hasattr(dest_q, 'task_done'):
+                        dest_q.task_done()
+                    chunks.append(chunk)
+                except Empty:
+                    break
+
+        finally:
+            read_adapter.close()
+            os.unlink(tmp_path)
+
+        return binary_data, b''.join(chunks)
+
+    def test_read_binary_chunks_exact_multiple(self):
+        """Binary content that divides evenly into chunk_size-sized pieces."""
+        self._require_fifo_queue()
+        chunk_size = 256
+        data = bytes(range(256)) * 4  # 1024 bytes, all byte values, no newlines
+        data_in, data_out = self.movement_binary_file(data, chunk_size=chunk_size)
+        self.assertEqual(data_in, data_out, 'Binary chunk data is inconsistent (exact multiple)')
+
+    def test_read_binary_chunks_uneven(self):
+        """Binary content that does NOT divide evenly into chunk_size-sized pieces."""
+        self._require_fifo_queue()
+        chunk_size = 100
+        data = bytes(range(256)) * 3 + b'\xff\x00\xaa'  # 771 bytes
+        data_in, data_out = self.movement_binary_file(data, chunk_size=chunk_size)
+        self.assertEqual(data_in, data_out, 'Binary chunk data is inconsistent (uneven)')
+
+    def test_read_binary_chunks_no_newlines(self):
+        """Binary content with zero newline bytes moves correctly."""
+        self._require_fifo_queue()
+        chunk_size = 128
+        # Exclude 0x0a (newline) and 0x0d (carriage return) to stress-test non-line splitting
+        data = bytes(b for b in range(256) if b not in (0x0a, 0x0d)) * 10
+        data_in, data_out = self.movement_binary_file(data, chunk_size=chunk_size)
+        self.assertEqual(data_in, data_out, 'Binary chunk data is inconsistent (no newlines)')
 
 
 if __name__ == "__main__":

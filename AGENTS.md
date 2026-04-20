@@ -46,13 +46,21 @@ src/queuelink/
 ├── contentwrapper.py         # Buffers large objects to disk (pipe size limit workaround)
 ├── writeout.py               # UTF-8 pipe/handle writer with exception handling
 ├── exceptionhandler.py       # Custom exceptions: ProcessNotStarted, HandleAlreadySet, etc.
+├── _encoding.py              # Encoding strategy helpers (internal)
 ├── metrics.py                # In-process timing/counting
 ├── timer.py                  # High-precision timing utility
-├── throughput.py             # Benchmarking: measures latency and throughput per queue/start type
-├── throughput_results.py     # SQLite storage for throughput benchmark results
 ├── version.py                # Package version via importlib.metadata
 ├── link.py                   # Factory function: auto-wires source/destination pairs
 └── classtemplate.py          # Logging mixin base class
+
+benchmarks/
+├── __init__.py
+├── context.py                # Path injection: adds src/ to sys.path
+├── throughput.py             # Benchmarking: measures latency and throughput per queue/start type
+├── throughput_results.py     # SQLite storage for throughput benchmark results
+├── throughput_test_exclude.py  # Benchmark tests (excluded from CI; run manually)
+├── content/                  # Benchmark fixtures and helper scripts
+└── README.md                 # Benchmark usage and output format
 ```
 
 **Key design constraint**: The library auto-detects whether queues are threading or
@@ -348,6 +356,11 @@ tox -e bandit
   SimpleQueue with multiple consumers, or a missing `stop()` call on a QueueLink.
 - Pylint may report issues not caught by your IDE because the tox pylint env reads
   `setup.cfg` `[pylint.*]` sections that IDEs often miss.
+
+## Commits
+Commits must be signed by a committer before they can be pushed to an origin branch. 
+Progress commits can be made without signing, but must be signed by the committer
+before pushing to the remote branch.
 
 ## CI/CD
 

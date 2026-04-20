@@ -150,6 +150,13 @@ def safe_get(queue_obj: UNION_SUPPORTED_QUEUES,
 
     CAUTION: Can deadlock if a SimpleQueue is read by multiple consumers.
 
+    **SimpleQueue polling trade-off**: For ``SimpleQueue`` types (both ``queue.SimpleQueue``
+    and ``multiprocessing.queues.SimpleQueue``), ``get(timeout=)`` is not supported. This
+    function falls back to a polling loop with a ``cycle_time`` sleep between attempts
+    (default 0.005 s = 5 ms). Under high throughput this polling interval becomes the
+    per-item latency floor — roughly 5 ms of added latency per message. If low latency
+    matters, prefer ``queue.Queue`` or ``multiprocessing.Queue`` over SimpleQueue types.
+
     Args:
         queue_obj: Any queue object
         block: Block until queue has an element to return (default True)

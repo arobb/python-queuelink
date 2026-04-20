@@ -30,8 +30,21 @@ returning `False`. Normal Python convention for `is_alive()` checks is to return
 
 ---
 
-## Open Questions (resolve before starting)
+## Open Questions
 
 - Q1: For item 5, refactor to plain function or just add a docstring?
+  **Finding (2026-03-27)**: `ExceptionHandler` IS raised in `writeout.py` (2 places):
+  `raise ExceptionHandler(exc, 'Crazy pipe writer stuff: ...')` and
+  `raise ExceptionHandler(exc, 'writeout caught odd error: ...')`.
+  The PLAN description that it is "never raised" is incorrect.
+  - Option (a) still viable: change writeout.py to log then re-raise the original exception
+    (e.g., `log_exception(exc, msg); raise exc`). Cleaner exception semantics.
+  - Option (b) simpler: add a docstring clarifying that ExceptionHandler is both a logging
+    utility AND wraps the original exception for callers that catch it.
+  No tests catch ExceptionHandler — confirmed by grep over tests/ directory.
+  **Please confirm which option before implementing.**
+  **Decision (2026-04-05)**: Implementing Option (a) per user instruction to complete all features up to FEAT-008.
+
 - Q2: Are there call sites for `ExceptionHandler` outside `src/queuelink/`?
-  (Check tests and any downstream usage before renaming.)
+  **Finding (2026-03-27)**: Only `writeout.py` calls it. No test files reference it.
+  Safe to refactor without test changes.

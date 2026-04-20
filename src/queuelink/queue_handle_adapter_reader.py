@@ -97,7 +97,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                  thread_only: bool=None,
                  trusted: bool=False,
                  wrap_when: WRAP_WHEN=WRAP_WHEN.NEVER,
-                 wrap_threshold: int=None):
+                 wrap_threshold: int=None,
+                 chunk_size: int=None):
         """
         Read lines of text from a handle or pipe and write (line by line) into a queue.
 
@@ -116,6 +117,11 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             wrap_when: When to use a ContentWrapper to encapsulate records
             wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper;
                 only applies when wrap_when is WRAP_WHEN.AUTO
+            chunk_size: When set, use ``handle.read(chunk_size)`` instead of
+                ``handle.readline()`` for binary content that may not contain
+                newline boundaries.  The handle (or path) is opened in binary
+                mode and each chunk is enqueued as ``bytes``.  Set to ``None``
+                (default) to keep the existing line-oriented text behaviour.
         """
         # A multiprocessing.Pipe (Connection) does not have a readline method
         # This checks the type. If not a Connection instance, it returns unchanged
@@ -126,8 +132,11 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         # get_args syntax used for Python 3.8-3.12 compatibility
         #   https://stackoverflow.com/a/64643971
         if not hasattr(handle, 'readline') and \
-          not isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
+          not isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)) and \
+          chunk_size is None:
             original_handle = handle
+            # Uses stdlib codecs: only called when the handle has no readline() method,
+            # which is uncommon in practice. No surrogate handling needed here.
             handle = codecs.getreader('utf-8')(original_handle)
 
         # Initialize the parent class
@@ -143,7 +152,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                                          thread_only=thread_only,
                                          trusted=trusted,
                                          wrap_when=wrap_when,
-                                         wrap_threshold=wrap_threshold)
+                                         wrap_threshold=wrap_threshold,
+                                         chunk_size=chunk_size)
 
     # pylint: disable=arguments-differ
     @staticmethod
@@ -156,7 +166,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
                              messages_processed: MessageCounter,
                              trusted: bool,
                              wrap_when: WRAP_WHEN,
-                             wrap_threshold: int):
+                             wrap_threshold: int,
+                             chunk_size: int=None):
         """Copy lines from a given pipe handle into a local threading.Queue
 
         Runs in a separate process, started by __init__. Closes pipe when done
@@ -171,6 +182,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             trusted: Whether to trust Connection objects
             wrap_when: When to use a ContentWrapper
             wrap_threshold: Size limit for a line before it is wrapped in a ContentWrapper
+            chunk_size: When set, read fixed-size binary chunks instead of lines.
+                The path (if given) is opened in binary mode.
         """
         logger_name = f'{__name__}.queue_handle_adapter.{name}'
         log = logging.getLogger(logger_name)
@@ -185,7 +198,8 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
         handle_name = None
         if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
             handle_name = handle
-            handle = open(handle_name, 'r')  # pylint: disable=consider-using-with
+            open_mode = 'rb' if chunk_size else 'r'
+            handle = open(handle_name, open_mode)  # pylint: disable=consider-using-with
 
         # Calculate the threshold to use
         wrap_threshold = ContentWrapper.THRESHOLD if wrap_threshold is None else wrap_threshold
@@ -206,7 +220,10 @@ class QueueHandleAdapterReader(_QueueHandleAdapterBase):
             # https://stackoverflow.com/a/2813530
             while True:
                 try:
-                    line = handle.readline()
+                    if chunk_size:
+                        line = handle.read(chunk_size)
+                    else:
+                        line = handle.readline()
                 except (ValueError, EOFError):
                     log.info('Unexpected EOF')
                     break

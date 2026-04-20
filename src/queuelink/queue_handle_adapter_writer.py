@@ -145,7 +145,20 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                         # Determine if the handle is binary
                         is_handle_bin = 'b' in handle.mode
 
+                        # Guard against mixed-type streams: once the handle mode is set by the
+                        # first line, all subsequent lines must be the same type.
+                        if is_handle_bin and not is_content_bin:
+                            raise TypeError(
+                                'Handle opened in binary mode (set by first line) but subsequent '
+                                'line is str. All lines must be the same type.')
+                        if not is_handle_bin and is_content_bin:
+                            raise TypeError(
+                                'Handle opened in text mode (set by first line) but subsequent '
+                                'line is bytes. All lines must be the same type.')
+
                         # Write content into the file
+                        # Direct encode/decode: content is already str or bytes here.
+                        # No surrogate handling needed; use stdlib directly.
                         log.info('Writing line to %s', name)
                         if is_handle_bin:
                             handle.write(content if is_content_bin else content.encode('utf-8'))

@@ -24,7 +24,7 @@ from __future__ import annotations
 import statistics
 from enum import Enum
 
-from .classtemplate import ClassTemplate
+from .logging_mixin import LoggingMixin
 from .common import new_id
 from .timer import Timer
 
@@ -35,7 +35,7 @@ class MetricType(Enum):
     COUNTING = 'counting'
 
 
-class BaseMetric(ClassTemplate):  # pylint: disable=too-few-public-methods
+class BaseMetric(LoggingMixin):  # pylint: disable=too-few-public-methods
     """Base class for QueueLink monitoring metrics"""
 
     def __init__(self, name: str = None, max_points: int = 100):
@@ -128,7 +128,7 @@ class TimedMetric(BaseMetric):
         }
 
 
-class Metrics(ClassTemplate):
+class Metrics(LoggingMixin):
     """Managing multiple metric instances and retrieving values"""
 
     def __init__(self,

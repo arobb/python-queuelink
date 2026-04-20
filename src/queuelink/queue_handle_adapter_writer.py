@@ -3,6 +3,7 @@
 contents to a pipe"""
 from __future__ import unicode_literals
 
+import enum
 import io
 import os
 import logging
@@ -25,6 +26,55 @@ from .common import (
     UNION_SUPPORTED_PATH_TYPES)
 
 
+def _is_binary_handle(handle) -> bool:
+    """Return True if *handle* is opened in binary mode.
+
+    Prefers the io class hierarchy (works for io.BytesIO, io.BufferedWriter,
+    io.StringIO, io.TextIOWrapper, etc.).  Falls back to inspecting the
+    underlying ``.file`` attribute for wrapper objects such as
+    ``tempfile._TemporaryFileWrapper`` that delegate to a standard io type
+    but are not subclasses of it themselves.  As a last resort, checks the
+    ``.mode`` attribute (reliable for standard file wrappers).
+    """
+    # Direct io hierarchy: most reliable
+    if isinstance(handle, (io.RawIOBase, io.BufferedIOBase)):
+        return True
+    if isinstance(handle, io.TextIOBase):
+        return False
+    # Wrapper objects (e.g. _TemporaryFileWrapper): inspect the inner file
+    inner = getattr(handle, 'file', None)
+    if inner is not None:
+        return isinstance(inner, (io.RawIOBase, io.BufferedIOBase))
+    # Last resort: .mode attribute (standard for file-like wrappers)
+    mode = getattr(handle, 'mode', None)
+    if mode is not None:
+        return 'b' in mode
+    # Cannot determine — assume text
+    return False
+
+
+class WriteMode(enum.Enum):
+    """Declared write mode for a path-based handle opened by ``QueueHandleAdapterWriter``.
+
+    When passed as the ``write_mode`` argument, the handle is opened in the
+    declared mode rather than inferring from the first line written.  This
+    removes the non-deterministic first-line dependency and prevents unexpected
+    ``TypeError`` failures if producers enqueue mixed-type content.
+
+    ``BINARY``: open in binary mode (``w+b``); all enqueued lines must be ``bytes``.
+    ``TEXT``: open in text mode (``w+``); all enqueued lines must be ``str``.
+
+    When ``write_mode`` is omitted, the adapter infers the mode from the first
+    line dequeued (``bytes`` → binary, ``str`` → text).  All subsequent lines
+    must be the same type; a mismatch logs an error and raises ``TypeError``.
+
+    Has no effect when ``handle`` is already an open file object — the mode of
+    a pre-opened handle is determined by ``isinstance`` check at start time.
+    """
+    BINARY = 'binary'
+    TEXT = 'text'
+
+
 # Private class only intended to be used by ProcessRunner
 # Works around (https://bryceboe.com/2011/01/28/
 # the-python-multiprocessing-queue-and-large-objects/ with large objects)
@@ -40,7 +90,8 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                  log_name: str=None,
                  start_method: str=None,
                  thread_only: bool=None,
-                 trusted: bool=False):
+                 trusted: bool=False,
+                 write_mode: WriteMode=None):
         """Custom manager to read messages from a queue and write them to a file or pipe
 
         Args:
@@ -52,6 +103,10 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             thread_only: Force the adapter to use a thread rather than process
             trusted: Whether to trust Connection objects; True uses .send/.recv, False
                 send_bytes/recv_bytes when reading from multiprocessing.connection.Connections
+            write_mode: Declared binary/text mode for path-based handles.  When
+                provided, the handle is opened in this mode rather than inferring
+                from the first line.  Has no effect when ``handle`` is already an
+                open file object.  See :class:`WriteMode`.
         """
         # Initialize the parent class
         super().__init__(queue=queue,
@@ -62,7 +117,8 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                          log_name=log_name,
                          start_method=start_method,
                          thread_only=thread_only,
-                         trusted=trusted)
+                         trusted=trusted,
+                         write_mode=write_mode)
 
     @staticmethod
     def queue_handle_adapter(*,  # All named parameters are required keyword arguments
@@ -73,6 +129,7 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                              stop_event: UNION_SUPPORTED_EVENTS,
                              messages_processed: MessageCounter,
                              trusted: bool,
+                             write_mode: WriteMode=None,
                              **kwargs):
         """Copy lines from a local multiprocessing.JoinableQueue into a pipe
 
@@ -87,15 +144,25 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             stop_event: Used to determine whether to stop the process
             messages_processed: Number of elements moved from the queue to handle
             trusted: Whether to trust Connection objects
+            write_mode: Declared binary/text mode for path-based handles
         """
-        def open_location(location: Union[str, PathLike], line) -> \
-                [io.TextIOWrapper, io.BufferedWriter]:
-            """Open a location string/Path and return a normal IO handle."""
-            if hasattr(line, 'decode'):
-                # Open the output file in binary mode
+        def open_location(location: Union[str, PathLike],
+                          line,
+                          mode: WriteMode) -> Union[io.TextIOWrapper, io.BufferedWriter]:
+            """Open a location string/Path and return a normal IO handle.
+
+            When *mode* is provided it takes precedence over first-line inference.
+            """
+            if mode is WriteMode.BINARY:
                 return open(location, mode='w+b')
 
-            # Otherwise open as a text file
+            if mode is WriteMode.TEXT:
+                return open(location, mode='w+')  # pylint: disable=unspecified-encoding
+
+            # No mode declared: infer from the first line's type.
+            if hasattr(line, 'decode'):
+                return open(location, mode='w+b')
+
             return open(location, mode='w+')  # pylint: disable=unspecified-encoding
 
         def flush(file_handle):
@@ -120,12 +187,15 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
             # get_args syntax used for Python 3.8-3.12 compatibility
             #   https://stackoverflow.com/a/64643971
             handle_ready = True
+            is_handle_bin = None
+
             if isinstance(handle, get_args(UNION_SUPPORTED_PATH_TYPES)):
                 handle_name = handle
                 handle_ready = False
-
-            # Handle type
-            is_handle_bin = None
+            else:
+                # Pre-opened handle: determine binary mode once, before the loop.
+                # File mode is immutable once opened, so this never needs re-reading.
+                is_handle_bin = _is_binary_handle(handle)
 
             # Loop over available lines until asked to stop
             while True:
@@ -139,22 +209,29 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
 
                         # Lazily open the file handle if it is not already open
                         if not handle_ready:
-                            handle = open_location(handle_name, line)  # pylint: disable=possibly-used-before-assignment
+                            handle = open_location(handle_name, line, write_mode)  # pylint: disable=possibly-used-before-assignment
                             handle_ready = True
+                            # Determine binary mode once, immediately after open.
+                            # open() always returns a standard io type, so isinstance
+                            # is reliable here. Set once; never re-read in the loop.
+                            is_handle_bin = isinstance(handle, (io.RawIOBase, io.BufferedIOBase))
 
-                        # Determine if the handle is binary
-                        is_handle_bin = 'b' in handle.mode
-
-                        # Guard against mixed-type streams: once the handle mode is set by the
-                        # first line, all subsequent lines must be the same type.
+                        # Guard against mixed-type streams.  Log the error for
+                        # diagnostics, then re-raise so the caller can detect the
+                        # failure via is_alive() or process exit code.
                         if is_handle_bin and not is_content_bin:
-                            raise TypeError(
-                                'Handle opened in binary mode (set by first line) but subsequent '
-                                'line is str. All lines must be the same type.')
+                            exc = TypeError(
+                                'Handle opened in binary mode but received a str line. '
+                                'All lines must be the same type.')
+                            log.error('Mixed-type stream: %s', exc)
+                            raise exc
+
                         if not is_handle_bin and is_content_bin:
-                            raise TypeError(
-                                'Handle opened in text mode (set by first line) but subsequent '
-                                'line is bytes. All lines must be the same type.')
+                            exc = TypeError(
+                                'Handle opened in text mode but received a bytes line. '
+                                'All lines must be the same type.')
+                            log.error('Mixed-type stream: %s', exc)
+                            raise exc
 
                         # Write content into the file
                         # Direct encode/decode: content is already str or bytes here.

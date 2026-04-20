@@ -155,7 +155,7 @@ conventions for `is_alive()` checks.
 
 ## Consistency Issues
 
-### 7. Three different encoding strategies for handles
+### 7. Three different encoding strategies for handles ✅ Resolved (FEAT-006)
 
 | Location | Approach |
 |---|---|
@@ -316,13 +316,10 @@ discard-on-full) rather than blocking.
 
 ## Structural Observations
 
-### 12. `classtemplate.py` naming
+### 12. `classtemplate.py` naming ✅ Resolved (FEAT-009)
 
-The file is named `classtemplate.py` and the class is `ClassTemplate`. This is
-accurate but generic. The class is specifically a *logging mixin*, and
-downstream maintainers (or agents) might not realize its purpose from the name
-alone. Consider renaming to `logging_mixin.py` / `LoggingMixin` in a future
-refactor. Not urgent; note it when touching that file.
+The file was renamed to `logging_mixin.py` and the class to `LoggingMixin`.
+All import sites updated; `classtemplate.py` deleted.
 
 ---
 
@@ -363,10 +360,10 @@ Resolved by FEAT-001. `link()` is fully implemented.
 | 2 | `get_all_data()` key collision bug | **High** (correctness) | Low | ✅ Resolved (FEAT-002) |
 | 3 | Destination change restarts all publishers | Medium (performance) | High | ✅ Closed — design validated, documented, tested (2026-04-19) |
 | 4 | Duplicate `new_id()` | Low (cleanliness) | Low | ✅ Resolved (FEAT-002) |
-| 5 | `ExceptionHandler` naming confusion | Low (clarity) | Low | Open |
+| 5 | `ExceptionHandler` naming confusion | Low (clarity) | Low | Deferred to v3 — removal planned with FEAT-008 (Windows support) |
 | 6 | `is_alive()` raises instead of returning False | Low (API consistency) | Low | ✅ Resolved (FEAT-004) |
-| 7 | Encoding strategy inconsistency | Medium (correctness risk) | Medium | Open — deferred (documented) |
-| 8 | Binary mode detection fragility | Medium (correctness risk) | Low | Open — untracked |
+| 7 | Encoding strategy inconsistency | Medium (correctness risk) | Medium | ✅ Resolved (FEAT-006) — kitchen/kitchenpatch removed; stdlib-only via _encoding.py |
+| 8 | Binary mode detection fragility | Medium (correctness risk) | Low | Open — tracked as FEAT-009 |
 | 9 | `link_timeout` doc/code mismatch | Low (docs) | Low | ✅ Resolved (FEAT-005) |
 | 10 | SimpleQueue polling latency undocumented | Low (docs) | Low | ✅ Resolved (FEAT-005) |
 | 11 | Metrics can stall publishers | Medium (reliability) | Medium | ✅ Resolved (FEAT-002) |

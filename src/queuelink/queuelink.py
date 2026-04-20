@@ -18,7 +18,7 @@ import multiprocessing
 from ctypes import c_int
 
 # Internal imports
-from .classtemplate import ClassTemplate
+from .logging_mixin import LoggingMixin
 from .exceptionhandler import ProcessNotStarted
 from .metrics import Metrics, MetricType
 from .common import DIRECTION
@@ -122,7 +122,7 @@ class LimitedLengthQueue(object):
         return getattr(self._queue, item)
 
 
-class QueueLink(ClassTemplate):
+class QueueLink(LoggingMixin):
     """Manages publishing from source and client queues"""
 
     def __init__(self,

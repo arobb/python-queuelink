@@ -51,7 +51,7 @@ src/queuelink/
 ├── timer.py                  # High-precision timing utility
 ├── version.py                # Package version via importlib.metadata
 ├── link.py                   # Factory function: auto-wires source/destination pairs
-└── classtemplate.py          # Logging mixin base class
+└── logging_mixin.py          # Logging mixin base class (LoggingMixin)
 
 benchmarks/
 ├── __init__.py
@@ -82,6 +82,7 @@ from `queuelink` directly:
 - `ContentWrapper`, `WRAP_WHEN` — large-message spill-to-disk
 - `QueueHandleAdapterReader` — reads from file/pipe handles into queues
 - `QueueHandleAdapterWriter` — writes from queues to file/pipe handles
+- `WriteMode` — enum (`BINARY`/`TEXT`) for explicit mode declaration on path-based handles
 - `writeout` — UTF-8 pipe writer helper
 - `link` — factory function: inspects source/destination types and wires the correct
   combination of `QueueLink`, `QueueHandleAdapterReader`, and/or `QueueHandleAdapterWriter`
@@ -94,7 +95,6 @@ without discussion.
 
 Runtime:
 - `importlib_metadata` — version detection (backport for Python 3.9)
-- `kitchen` / `processrunner-kitchenpatch` — UTF-8 encoding for pipe writers (`writeout.py`)
 
 Test:
 - `parameterized` — `@parameterized_class` for cartesian test generation

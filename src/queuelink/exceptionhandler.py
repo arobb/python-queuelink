@@ -108,6 +108,8 @@ class ExceptionHandler(Exception):
         Prefer :func:`log_exception` for new code.  If you need to surface an
         error to the caller, use ``log_exception(exc, msg); raise exc`` so the
         original exception type is preserved.
+
+        Planned for removal in v3 alongside Windows support (FEAT-008).
     """
     def __repr__(self):
         return self.errmsg

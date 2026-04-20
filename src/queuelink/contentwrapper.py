@@ -13,7 +13,7 @@ from io import IOBase as file
 from typing import Union
 
 from ._encoding import to_bytes, getwriter
-from .classtemplate import ClassTemplate
+from .logging_mixin import LoggingMixin
 from .timer import Timer
 
 
@@ -88,7 +88,7 @@ class WRAP_WHEN(Enum):  # pylint: disable=invalid-name
     NEVER = auto()
 
 
-class ContentWrapper(ClassTemplate):
+class ContentWrapper(LoggingMixin):
     """
     Representation of content for a queue where the values may exceed the
     native pipe size.

@@ -13,6 +13,13 @@ Development setup
     python -m venv .venv
     source .venv/bin/activate
     pip install -e ".[test]"
+    git config core.hooksPath hooks   # activate pre-commit secrets scan
+
+The ``git config core.hooksPath hooks`` step activates the privacy / secrets
+pre-commit hook (``hooks/pre-commit``).  The hook runs ``detect-secrets``
+against every staged file before each commit and blocks the commit if a
+potential secret is found.  See ``AGENTS.md`` "Privacy and Secrets Check" for
+details on handling false positives.
 
 Running tests
 -------------

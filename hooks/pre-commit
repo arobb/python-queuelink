@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# pre-commit hook: privacy / secrets scan
+#
+# Runs detect-secrets against every file staged for this commit.
+# Exits non-zero if any finding is not already present in .secrets.baseline.
+#
+# Activated via:  git config core.hooksPath hooks
+# (Already set in this repo's .git/config)
+#
+# To mark a finding as a known false positive:
+#   1. Review carefully — make sure it truly is a false positive.
+#   2. detect-secrets scan > .secrets.baseline
+#   3. git add .secrets.baseline && git commit
+#
+# Requirements: detect-secrets must be on PATH or in a known virtualenv path.
+#   pip install detect-secrets        # global / active venv
+#   # or it is installed automatically when requirements-test.txt is used.
+
+set -euo pipefail
+
+BASELINE=".secrets.baseline"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# ---------------------------------------------------------------------------
+# Locate detect-secrets
+# ---------------------------------------------------------------------------
+DS=""
+if command -v detect-secrets &>/dev/null; then
+    DS="detect-secrets"
+else
+    for candidate in \
+        "$REPO_ROOT/.tox/py311/bin/detect-secrets" \
+        "$REPO_ROOT/.tox/py312/bin/detect-secrets" \
+        "$REPO_ROOT/.tox/py313/bin/detect-secrets" \
+        "$REPO_ROOT/.venv/bin/detect-secrets" \
+        "$REPO_ROOT/venv/bin/detect-secrets"
+    do
+        if [ -x "$candidate" ]; then
+            DS="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$DS" ]; then
+    echo "" >&2
+    echo "ERROR: detect-secrets not found." >&2
+    echo "       Install:  pip install detect-secrets" >&2
+    echo "       Baseline: detect-secrets scan > .secrets.baseline" >&2
+    echo "Commit blocked until detect-secrets is available." >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Baseline must exist and be committed (or staged)
+# ---------------------------------------------------------------------------
+if [ ! -f "$REPO_ROOT/$BASELINE" ]; then
+    echo "" >&2
+    echo "ERROR: $BASELINE not found." >&2
+    echo "       Generate: detect-secrets scan > .secrets.baseline" >&2
+    echo "       Stage:    git add .secrets.baseline" >&2
+    echo "Commit blocked." >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Collect staged files (added, copied, modified — not deleted)
+# ---------------------------------------------------------------------------
+STAGED=$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Scan each staged file and compare against baseline
+# ---------------------------------------------------------------------------
+# We scan the working-tree version of each file.  For a privacy check this
+# is correct: we want to block secrets in any version that has been touched,
+# not just the diff.  Scanning the whole-file also means detect-secrets can
+# apply its full heuristic suite (some detectors need surrounding context).
+SCAN_PATHS=()
+while IFS= read -r f; do
+    if [ -f "$REPO_ROOT/$f" ]; then
+        SCAN_PATHS+=("$REPO_ROOT/$f")
+    fi
+done <<< "$STAGED"
+
+if [ ${#SCAN_PATHS[@]} -eq 0 ]; then
+    exit 0
+fi
+
+SCAN_OUTPUT=$("$DS" scan "${SCAN_PATHS[@]}" 2>/dev/null)
+
+# ---------------------------------------------------------------------------
+# Compare scan output to baseline; report any new findings
+# ---------------------------------------------------------------------------
+python3 - "$REPO_ROOT/$BASELINE" <<PYEOF
+import json, sys, os
+
+scan_json = """$SCAN_OUTPUT"""
+baseline_path = sys.argv[1]
+
+try:
+    new = json.loads(scan_json)
+except json.JSONDecodeError as e:
+    print(f"ERROR: could not parse detect-secrets output: {e}", file=sys.stderr)
+    sys.exit(1)
+
+with open(baseline_path) as f:
+    baseline = json.load(f)
+
+# Baseline is keyed by filename (possibly absolute or relative).
+# Build a set of approved hashes — key on hashed_secret alone since the
+# same secret value produces the same hash regardless of path or line number.
+approved = {
+    s["hashed_secret"]
+    for secrets in baseline.get("results", {}).values()
+    for s in secrets
+}
+
+new_findings = []
+for path, secrets in new.get("results", {}).items():
+    display_path = os.path.relpath(path, "$REPO_ROOT") if os.path.isabs(path) else path
+    for s in secrets:
+        if s["hashed_secret"] not in approved:
+            new_findings.append((display_path, s["line_number"], s["type"]))
+
+if new_findings:
+    print("", file=sys.stderr)
+    print("┌──────────────────────────────────────────────────────────────┐", file=sys.stderr)
+    print("│  COMMIT BLOCKED — potential secrets detected                 │", file=sys.stderr)
+    print("└──────────────────────────────────────────────────────────────┘", file=sys.stderr)
+    print("", file=sys.stderr)
+    for path, line, typ in new_findings:
+        print(f"  {path}:{line}  [{typ}]", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("If this is a confirmed false positive:", file=sys.stderr)
+    print("  detect-secrets scan > .secrets.baseline", file=sys.stderr)
+    print("  git add .secrets.baseline && git commit", file=sys.stderr)
+    print("", file=sys.stderr)
+    sys.exit(1)
+PYEOF

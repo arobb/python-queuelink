@@ -105,6 +105,51 @@ Test:
 Do not introduce alternative libraries for encoding or test parameterization
 without checking whether the existing ones already cover the use case.
 
+## Privacy and Secrets Check (REQUIRED before every commit)
+
+**This check is non-optional.** It is enforced automatically by the git
+pre-commit hook in `hooks/pre-commit`, which fires on every `git commit`.
+Agents must not attempt to bypass it (e.g. `--no-verify`).
+
+The hook runs `detect-secrets` against every staged file and blocks the commit
+if any potential secret (API key, private key, token, password, high-entropy
+string) is found that is not already in `.secrets.baseline`.
+
+**What the hook does automatically:**
+- Locates `detect-secrets` on PATH or in common tox/venv paths under the repo.
+- Scans every staged file.
+- Compares findings to `.secrets.baseline` (approved false positives).
+- Exits non-zero and prints the offending file/line/type if a new secret is
+  found.
+
+**If the hook fires on your commit:**
+1. Inspect the reported file and line.
+2. If it is a real secret, remove it from the staged content. Do not commit it.
+3. If it is a confirmed false positive (e.g. a test fixture or a doc example),
+   update the baseline and commit the updated baseline first:
+   ```
+   detect-secrets scan > .secrets.baseline
+   git add .secrets.baseline
+   git commit -m "chore: update secrets baseline (false positive: <reason>)"
+   ```
+   Include a brief reason in the commit message so reviewers can verify the
+   decision.
+
+**Fresh-clone setup** — `core.hooksPath = hooks` is stored in `.git/config`
+for this repo and is set automatically when the repo is cloned via the setup
+steps in `CONTRIBUTING.rst`. If you cloned without running setup, activate
+the hook manually:
+```
+git config core.hooksPath hooks
+pip install detect-secrets        # if not already in your active environment
+```
+
+**Never use `git commit --no-verify`.** There is no scenario where bypassing
+the secrets check is acceptable. If the hook is producing false positives,
+update `.secrets.baseline` as described above.
+
+---
+
 ## Agent Workflow
 
 For any non-trivial task (multiple files, multiple concerns, or more than a few

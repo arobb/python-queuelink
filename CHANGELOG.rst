@@ -12,7 +12,10 @@ Versions correspond to git tags; unreleased changes appear under *Unreleased*.
 Unreleased
 ----------
 
-*Changes on ``feat/003-throughput-planning`` not yet tagged.*
+----
+
+v2.3.0 — 2026-09-27
+--------------------
 
 Added
 ~~~~~

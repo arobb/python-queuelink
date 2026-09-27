@@ -12,10 +12,8 @@ from enum import Enum, auto
 from io import IOBase as file
 from typing import Union
 
-from kitchen.text.converters import to_bytes
-from kitchenpatch import getwriter
-
-from .classtemplate import ClassTemplate
+from ._encoding import to_bytes, getwriter
+from .logging_mixin import LoggingMixin
 from .timer import Timer
 
 
@@ -90,7 +88,7 @@ class WRAP_WHEN(Enum):  # pylint: disable=invalid-name
     NEVER = auto()
 
 
-class ContentWrapper(ClassTemplate):
+class ContentWrapper(LoggingMixin):
     """
     Representation of content for a queue where the values may exceed the
     native pipe size.
@@ -102,6 +100,15 @@ class ContentWrapper(ClassTemplate):
     Access data with
         print("My data: {cw.value}")
         print("My data: {cw}")
+
+    **Descriptor interception**: ``__setattr__`` and ``__getattr__`` intercept
+    access to the ``.value`` attribute to provide transparent disk buffering.
+    When the value exceeds ``threshold`` bytes, ``__setattr__`` writes it to a
+    ``tempfile.NamedTemporaryFile`` and sets ``storage_type = TYPES.FILE``.
+    Subsequent reads via ``__getattr__`` detect ``TYPES.FILE`` and read from
+    the temp file instead of memory, making the spill-to-disk transparent to
+    callers. All other attribute access bypasses the interception and behaves
+    normally via ``object.__getattribute__``/``object.__setattr__``.
     """
 
     # Need to figure out a way to do this automatically
@@ -124,6 +131,10 @@ class ContentWrapper(ClassTemplate):
     def __setattr__(self, attr, val):
         """When necessary, save the 'value' to a buffer file"""
         if attr == "value":
+            # Track whether the stored value is raw bytes so _get_value_from_file()
+            # can return the correct type without decoding.
+            object.__setattr__(self, "_stored_as_bytes", isinstance(val, bytes))
+
             # Within the threshold size limit or not forced to use a file
             if get_len(val) < self.threshold and not self._is_explicit_file():
                 self._log.debug("Storing value to memory")
@@ -149,14 +160,22 @@ class ContentWrapper(ClassTemplate):
                                        tempfile.NamedTemporaryFile(delete=False))
                 handle = object.__getattribute__(self, "location_handle")
                 object.__setattr__(self, "location_name", handle.name)
-                writer = getwriter("utf-8")(handle)
 
                 self._log.info("Writing value into buffer file %s",
                                handle.name)
                 stopwatch = Timer()
-                writer.write(val)
-                writer.flush()
-                os.fsync(writer.fileno())
+                if isinstance(val, bytes):
+                    # Write binary data directly — no encoding step needed.
+                    handle.write(val)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                else:
+                    # Uses errors='replace' so unencodable characters (e.g. lone surrogates)
+                    # produce the replacement character rather than raising UnicodeEncodeError.
+                    writer = getwriter("utf-8")(handle)
+                    writer.write(val)
+                    writer.flush()
+                    os.fsync(writer.fileno())
                 lap = stopwatch.lap()
                 self._log.info("Finished writing value into buffer file in "
                                "%.1f seconds", lap)
@@ -252,6 +271,7 @@ class ContentWrapper(ClassTemplate):
         self.location_handle: file = None
         self.location_name: str = None
         self.being_serialized: bool = False
+        self._stored_as_bytes: bool = False
 
         # Store the initial value
         self.value = val
@@ -267,13 +287,20 @@ class ContentWrapper(ClassTemplate):
 
     def _get_value_from_file(self):
         handle = object.__getattribute__(self, "location_handle")
-        reader = getreader("utf-8")(handle)
         handle.seek(0)
 
         stopwatch = Timer()
-        content = reader.read()
+        if object.__getattribute__(self, "_stored_as_bytes"):
+            # Value was stored as raw bytes; return without decoding.
+            content = handle.read()
+        else:
+            # Value was stored as text; decode from UTF-8.
+            # getwriter() uses errors='replace' on write, so the file on disk
+            # is valid UTF-8; stdlib getreader() is safe to use here.
+            reader = getreader("utf-8")(handle)
+            content = reader.read()
         lap = stopwatch.lap()
-        self._log.info("Finished reading value into buffer file in %.1f "
+        self._log.info("Finished reading value from buffer file in %.1f "
                        "seconds", lap)
 
         return content

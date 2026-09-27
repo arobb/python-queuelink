@@ -15,7 +15,7 @@ import multiprocessing
 
 from _io import _IOBase  # For comparisons
 
-from .classtemplate import ClassTemplate
+from .logging_mixin import LoggingMixin
 from .exceptionhandler import HandleAlreadySet
 from .common import DIRECTION
 from .common import is_threaded
@@ -45,7 +45,7 @@ class MessageCounter(object):
         return object.__getattribute__(self, attr)
 
 
-class _QueueHandleAdapterBase(ClassTemplate):
+class _QueueHandleAdapterBase(LoggingMixin):
     """QueueHandleAdapter abstract implementation"""
     def __init__(self,
                  queue: UNION_SUPPORTED_QUEUES,

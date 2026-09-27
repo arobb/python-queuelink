@@ -21,6 +21,7 @@ The project source is available on `Github <https://github.com/arobb/python-queu
    metrics
    api
    publishing
+   changelog
 
 Quick Start
 ===========

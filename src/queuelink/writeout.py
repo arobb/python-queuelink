@@ -2,10 +2,8 @@
 """Wrapper to make async writing to a pipe more reliable across processes"""
 from __future__ import unicode_literals
 
-from kitchen.text.converters import to_bytes
-from kitchenpatch import getwriter
-
-from .exceptionhandler import ExceptionHandler
+from ._encoding import to_bytes, getwriter
+from .exceptionhandler import log_exception
 
 
 def writeout(pipe, output_prefix):
@@ -21,6 +19,9 @@ def writeout(pipe, output_prefix):
     # TODO Validate the pipe somehow
 
     def func(line):
+        # Uses errors='replace' so unencodable characters produce the replacement
+        # character rather than raising. The TypeError fallback handles pipes
+        # that reject the encoded form.
         pipe_writer = getwriter("utf-8")(pipe)
         output = f'{output_prefix}{line}'
 
@@ -34,10 +35,12 @@ def writeout(pipe, output_prefix):
             except TypeError:
                 pipe.write(str(output))
             except Exception as exc:
-                raise ExceptionHandler(exc, f'Crazy pipe writer stuff: {exc}')
+                log_exception(exc, f'Crazy pipe writer stuff: {exc}')
+                raise exc
 
         except ValueError as exc:
-            raise ExceptionHandler(exc, f'writeout caught odd error: {exc}')
+            log_exception(exc, f'writeout caught odd error: {exc}')
+            raise exc
 
         finally:
             pipe_writer.flush()

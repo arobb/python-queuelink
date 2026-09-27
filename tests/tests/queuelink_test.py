@@ -433,6 +433,205 @@ class QueueLinkMetricsProcessPublisherSpawnTest(unittest.TestCase):
             self.assertIsInstance(data, dict, f"element {eid} data should be a dict")
 
 
+class QueueLinkDynamicDestinationTest(unittest.TestCase):
+    """Tests for dynamic destination registration — adding destinations to a running QueueLink.
+
+    Not parameterized over queue types; uses thread-based queues throughout.
+    The behaviour under test is the stop-and-restart consistency guarantee in
+    register_queue(direction=DIRECTION.TO), not queue-type compatibility.
+
+    Consistency guarantee: after register_queue() returns, every message put to
+    any source queue will be delivered to ALL registered destinations, including
+    the one just added. Messages in-flight at the moment of registration are
+    covered by the synchronous stop-and-join inside register_queue() — the
+    stopping publisher finishes its current distribution step before exiting, so
+    no message already dequeued from the source is lost.
+    """
+
+    TIMEOUT = 10
+
+    def test_messages_reach_second_destination_after_dynamic_registration(self):
+        """Messages put to source after registering a second destination arrive at both queues.
+
+        queuelink.py: register_queue() stop-and-restart consistency guarantee.
+        """
+        src = queue.Queue()
+        dst1 = queue.Queue()
+        dst2 = queue.Queue()
+
+        ql = QueueLink(source=src, destination=dst1)
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+
+        src.put('hello')
+        src.put('world')
+
+        self.assertEqual('hello', safe_get(dst1, timeout=self.TIMEOUT))
+        self.assertEqual('world', safe_get(dst1, timeout=self.TIMEOUT))
+        self.assertEqual('hello', safe_get(dst2, timeout=self.TIMEOUT))
+        self.assertEqual('world', safe_get(dst2, timeout=self.TIMEOUT))
+
+        ql.stop()
+
+    def test_link_remains_alive_after_dynamic_registration(self):
+        """is_alive() returns True after registering a second destination.
+
+        Verifies that the stop-and-restart inside register_queue() completes
+        successfully and the publisher is running before the call returns.
+        """
+        src = queue.Queue()
+        dst1 = queue.Queue()
+        dst2 = queue.Queue()
+
+        ql = QueueLink(source=src, destination=dst1)
+        self.assertTrue(ql.is_alive())
+
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+        self.assertTrue(ql.is_alive(),
+                        "Publisher should be alive after dynamic destination registration")
+
+        ql.stop()
+
+    def test_existing_destination_unaffected_after_second_registered(self):
+        """The first destination continues to receive messages after a second is added.
+
+        Regression guard: the stop-and-restart must not lose the original destination.
+        """
+        src = queue.Queue()
+        dst1 = queue.Queue()
+        dst2 = queue.Queue()
+
+        ql = QueueLink(source=src, destination=dst1)
+
+        # Send and drain one message before adding dst2 to establish a clean baseline.
+        src.put('before')
+        self.assertEqual('before', safe_get(dst1, timeout=self.TIMEOUT))
+
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+
+        src.put('after')
+        self.assertEqual('after', safe_get(dst1, timeout=self.TIMEOUT),
+                         "dst1 should still receive messages after dst2 is registered")
+        self.assertEqual('after', safe_get(dst2, timeout=self.TIMEOUT),
+                         "dst2 should receive messages after dynamic registration")
+
+        ql.stop()
+
+    def test_multiple_sequential_dynamic_registrations(self):
+        """Adding three destinations one at a time — each addition keeps all previous ones live."""
+        src = queue.Queue()
+        dst1 = queue.Queue()
+        dst2 = queue.Queue()
+        dst3 = queue.Queue()
+
+        ql = QueueLink(source=src, destination=dst1)
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+        ql.register_queue(q=dst3, direction=DIRECTION.TO)
+
+        src.put('broadcast')
+
+        self.assertEqual('broadcast', safe_get(dst1, timeout=self.TIMEOUT))
+        self.assertEqual('broadcast', safe_get(dst2, timeout=self.TIMEOUT))
+        self.assertEqual('broadcast', safe_get(dst3, timeout=self.TIMEOUT))
+
+        ql.stop()
+
+    def test_multiple_sources_each_route_to_all_destinations_after_dynamic_registration(self):
+        """With multiple sources, every publisher is restarted and routes to all destinations.
+
+        Exercises the O(n) restart path — each of the n source publishers is
+        individually stopped and restarted with the updated destination list.
+        """
+        src1 = queue.Queue()
+        src2 = queue.Queue()
+        dst1 = queue.Queue()
+        dst2 = queue.Queue()
+
+        ql = QueueLink()
+        ql.register_queue(q=src1, direction=DIRECTION.FROM)
+        ql.register_queue(q=src2, direction=DIRECTION.FROM)
+        ql.register_queue(q=dst1, direction=DIRECTION.TO)
+
+        # Adding dst2 triggers n=2 publisher restarts (one per source).
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+
+        src1.put('from_src1')
+        src2.put('from_src2')
+
+        out_dst1 = {safe_get(dst1, timeout=self.TIMEOUT),
+                    safe_get(dst1, timeout=self.TIMEOUT)}
+        out_dst2 = {safe_get(dst2, timeout=self.TIMEOUT),
+                    safe_get(dst2, timeout=self.TIMEOUT)}
+
+        self.assertIn('from_src1', out_dst1,
+                      "src1 message should reach dst1 after dynamic registration")
+        self.assertIn('from_src2', out_dst1,
+                      "src2 message should reach dst1 after dynamic registration")
+        self.assertIn('from_src1', out_dst2,
+                      "src1 message should reach dst2 after dynamic registration")
+        self.assertIn('from_src2', out_dst2,
+                      "src2 message should reach dst2 after dynamic registration")
+
+        ql.stop()
+
+
+class QueueLinkDynamicDestinationSpawnTest(unittest.TestCase):
+    """Dynamic destination registration with a process-based (spawn) publisher.
+
+    Named with 'spawn' so tox routes it to the serial phase (forkserver/spawn
+    tests cannot run under pytest-xdist fork workers).
+
+    For spawn publishers, the destination dict is serialised into the child
+    process at start time. Separate memory means the parent's mutations to
+    client_queues_destination are invisible to the running child. The
+    stop-and-restart is therefore the only mechanism to deliver the updated
+    destination list — these tests confirm it works end-to-end.
+    """
+
+    TIMEOUT = 30
+
+    def test_messages_reach_new_destination_after_dynamic_registration_spawn(self):
+        """Dynamic registration delivers subsequent messages to both destinations (spawn)."""
+        ctx = multiprocessing.get_context('spawn')
+        src = ctx.Queue()
+        dst1 = ctx.Queue()
+        dst2 = ctx.Queue()
+
+        ql = QueueLink(source=src, destination=dst1, start_method='spawn')
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+
+        self.assertTrue(ql.is_alive(),
+                        "Publisher should be alive after dynamic destination registration (spawn)")
+
+        src.put('hello')
+
+        self.assertEqual('hello', safe_get(dst1, timeout=self.TIMEOUT))
+        self.assertEqual('hello', safe_get(dst2, timeout=self.TIMEOUT))
+
+        ql.stop()
+
+    def test_existing_destination_unaffected_after_dynamic_registration_spawn(self):
+        """The original destination still receives messages after a second is added (spawn)."""
+        ctx = multiprocessing.get_context('spawn')
+        src = ctx.Queue()
+        dst1 = ctx.Queue()
+        dst2 = ctx.Queue()
+
+        ql = QueueLink(source=src, destination=dst1, start_method='spawn')
+
+        src.put('before')
+        self.assertEqual('before', safe_get(dst1, timeout=self.TIMEOUT))
+
+        ql.register_queue(q=dst2, direction=DIRECTION.TO)
+
+        src.put('after')
+        self.assertEqual('after', safe_get(dst1, timeout=self.TIMEOUT),
+                         "dst1 should still receive messages after dst2 is registered (spawn)")
+        self.assertEqual('after', safe_get(dst2, timeout=self.TIMEOUT),
+                         "dst2 should receive messages after dynamic registration (spawn)")
+
+        ql.stop()
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(QueueLinkTestCaseCombinations)
     unittest.TextTestRunner(verbosity=2).run(suite)

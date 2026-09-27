@@ -48,12 +48,12 @@ Run 2 would select spawn-only tests. The split needs a Windows-aware alternative
 - Windows: single run with `-k "spawn"` (no fork, no forkserver)
 - Linux/macOS: current two-phase split preserved
 
-### 3. `kitchen` / `kitchenpatch` dependency
+### 3. `kitchen` / `kitchenpatch` dependency ✅ Resolved (FEAT-006)
 
-`writeout.py` and `contentwrapper.py` use `kitchen` / `processrunner-kitchenpatch` for
-UTF-8 encoding. Windows compatibility of these packages is unknown and must be verified
-before committing to this approach. If they do not work on Windows, a fallback path or
-replacement is needed (see also FEAT-006, which already proposes encoding unification).
+`writeout.py` and `contentwrapper.py` previously used `kitchen` /
+`processrunner-kitchenpatch` for UTF-8 encoding. FEAT-006 replaced both with a
+stdlib-only `_encoding.py` module; neither package remains in `requirements.txt`.
+This blocker is closed.
 
 ### 4. CI coverage rename step
 
@@ -79,10 +79,9 @@ removed or replaced with a Windows-aware tox configuration.
 
 ## Open Questions (resolve before implementation)
 
-**Q1 — `kitchen`/`kitchenpatch` Windows compatibility?**
-Install `kitchen` and `processrunner-kitchenpatch` in a Windows environment and verify
-`writeout.py` and `contentwrapper.py` work. If not, Windows support depends on FEAT-006
-(encoding unification) landing first, or a conditional import fallback.
+**Q1 — `kitchen`/`kitchenpatch` Windows compatibility?** ✅ Resolved (FEAT-006)
+Both packages have been removed and replaced with stdlib-only `_encoding.py`.
+No Windows compatibility concern remains for encoding.
 
 **Q2 — Tox configuration strategy: one env or two?**
 - Option A: Extend the existing `[testenv]` with a Windows-aware command block using
@@ -108,11 +107,11 @@ is native Windows Python, not WSL2.
 
 ### Phase 1 — Compatibility audit
 
-1. Verify `kitchen` / `kitchenpatch` install and run on Windows (Python 3.9–3.13)
-2. Run a minimal smoke test of `QueueLink` with `spawn` on Windows
-3. Identify any other Unix-only calls in `src/queuelink/` (e.g., `signal`, `fcntl`,
+1. Run a minimal smoke test of `QueueLink` with `spawn` on Windows
+2. Identify any Unix-only calls in `src/queuelink/` (e.g., `signal`, `fcntl`,
    platform-specific `multiprocessing.connection` behavior)
-4. Document findings; determine if FEAT-006 must land before FEAT-008
+3. Document findings
+4. ~~Verify `kitchen`/`kitchenpatch` Windows compatibility~~ — resolved by FEAT-006
 
 ### Phase 2 — Platform-aware start method list
 
@@ -179,9 +178,19 @@ is native Windows Python, not WSL2.
 
 ## Dependencies
 
-- Phase 1 (audit) determines whether FEAT-006 (encoding) must land first
-- FEAT-003 Phase 1 (benchmarks relocation) should complete before FEAT-008 touches
-  `setup.cfg` to avoid conflicts
+- Phase 1 (audit) determines scope of any remaining platform-specific changes
+- FEAT-003 (benchmarks relocation) and FEAT-006 (encoding) are complete — no
+  pre-requisite blockers remain
+
+## v3 Scope
+
+FEAT-008 is the anchor for version 3. The following additional items are
+planned for the same release:
+
+- **Remove `ExceptionHandler`** (`src/queuelink/exceptionhandler.py`): the
+  class is deprecated (see REVIEW-001 item 5); `log_exception()` is the
+  replacement. Removal is deferred until v3 to avoid a breaking change in a
+  minor release.
 
 ---
 

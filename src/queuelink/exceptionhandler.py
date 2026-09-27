@@ -62,10 +62,54 @@ class HandleNotSet(Exception):
         return repr(self.value)
 
 
-class ExceptionHandler(Exception):
-    """Exception management
+def log_exception(error, message=None):
+    """Log an exception with optional context message, error type/text, and traceback.
 
-    TODO: Add additional detail
+    Prefer this function over ``ExceptionHandler`` for new code.  It performs
+    the same structured logging without raising or wrapping the exception, so
+    callers retain full control over how (and whether) the original exception
+    is propagated.
+
+    Args:
+        error (Exception): The caught exception to log.
+        message (str, optional): An additional context message to log before
+            the exception details.
+    """
+    _exc_type, _exc_obj, exc_tb = sys.exc_info()
+    err_type = type(error).__name__
+    error_text = str(error)
+
+    log = logging.getLogger(__name__)
+    log.addHandler(logging.NullHandler())
+
+    if message is not None:
+        log.error(message)
+
+    template = "An exception of type {0} occurred. Error message:\n{1}"
+    errmsg = template.format(err_type, error_text)
+    errmsg += "\n"
+    log.error(errmsg)
+
+    errargmsg = f"{err_type} {type(error).__name__} arguments:\n{error.args:2!r}"
+    errargmsg += "\n"
+    log.error(errargmsg)
+
+    tbmsg = err_type + " traceback (most recent call last):"
+    log.error(tbmsg)
+    log.error("".join(traceback.format_tb(exc_tb)))
+
+
+class ExceptionHandler(Exception):
+    """Legacy exception wrapper that also logs on construction.
+
+    .. deprecated::
+        This class inherits from ``Exception`` but its primary purpose is
+        structured logging, which makes it misleading as an exception type.
+        Prefer :func:`log_exception` for new code.  If you need to surface an
+        error to the caller, use ``log_exception(exc, msg); raise exc`` so the
+        original exception type is preserved.
+
+        Planned for removal in v3 alongside Windows support (FEAT-008).
     """
     def __repr__(self):
         return self.errmsg

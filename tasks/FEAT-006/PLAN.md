@@ -40,8 +40,17 @@ raises `TypeError` without a clear error message.
 
 ---
 
-## Open Questions (resolve before starting)
+## Open Questions
 
 - Q1: Is `kitchenpatch` required for a specific reason, or is it historical?
-  (Check git blame / commit history on `writeout.py` and `contentwrapper.py`)
+  **Finding (2026-03-27)**: kitchenpatch is used in `writeout.py` and `contentwrapper.py` for
+  robust surrogate-handling UTF-8 encoding that stdlib codecs may reject. `queue_handle_adapter_reader.py`
+  uses stdlib codecs (acceptable for readline handles — uncommon path). `queue_handle_adapter_writer.py`
+  uses direct encode/decode (acceptable for known str/bytes content). **Decision**: document the
+  rationale inline rather than unifying; changing writeout.py and contentwrapper.py risks regressions
+  without evidence of a problem.
+
 - Q2: For item 8, document-only fix or add defensive type check?
+  **Decision (2026-03-27)**: Option (b) — added defensive type check that raises `TypeError` with a
+  clear message when binary/text mode mismatches, rather than letting an opaque `TypeError` propagate
+  from `write()`.

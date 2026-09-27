@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Template class to standardize repetitive functionality"""
+"""Logging mixin base class for QueueLink components."""
 # pylint: disable=too-few-public-methods
 
 import logging
 
 
-class ClassTemplate(object):
-    """A pattern to hold boilerplate code across classes"""
+class LoggingMixin(object):
+    """Mixin that provides structured logging initialisation helpers.
+
+    Subclasses call one of the ``_initialize_logging*`` methods in their
+    ``__init__`` to set up ``self._log`` before any logging is needed.
+    """
     id = None
     log_name = None
     name = None

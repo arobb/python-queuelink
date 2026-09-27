@@ -46,13 +46,21 @@ src/queuelink/
 ├── contentwrapper.py         # Buffers large objects to disk (pipe size limit workaround)
 ├── writeout.py               # UTF-8 pipe/handle writer with exception handling
 ├── exceptionhandler.py       # Custom exceptions: ProcessNotStarted, HandleAlreadySet, etc.
+├── _encoding.py              # Encoding strategy helpers (internal)
 ├── metrics.py                # In-process timing/counting
 ├── timer.py                  # High-precision timing utility
-├── throughput.py             # Benchmarking: measures latency and throughput per queue/start type
-├── throughput_results.py     # SQLite storage for throughput benchmark results
 ├── version.py                # Package version via importlib.metadata
 ├── link.py                   # Factory function: auto-wires source/destination pairs
-└── classtemplate.py          # Logging mixin base class
+└── logging_mixin.py          # Logging mixin base class (LoggingMixin)
+
+benchmarks/
+├── __init__.py
+├── context.py                # Path injection: adds src/ to sys.path
+├── throughput.py             # Benchmarking: measures latency and throughput per queue/start type
+├── throughput_results.py     # SQLite storage for throughput benchmark results
+├── throughput_test_exclude.py  # Benchmark tests (excluded from CI; run manually)
+├── content/                  # Benchmark fixtures and helper scripts
+└── README.md                 # Benchmark usage and output format
 ```
 
 **Key design constraint**: The library auto-detects whether queues are threading or
@@ -74,6 +82,7 @@ from `queuelink` directly:
 - `ContentWrapper`, `WRAP_WHEN` — large-message spill-to-disk
 - `QueueHandleAdapterReader` — reads from file/pipe handles into queues
 - `QueueHandleAdapterWriter` — writes from queues to file/pipe handles
+- `WriteMode` — enum (`BINARY`/`TEXT`) for explicit mode declaration on path-based handles
 - `writeout` — UTF-8 pipe writer helper
 - `link` — factory function: inspects source/destination types and wires the correct
   combination of `QueueLink`, `QueueHandleAdapterReader`, and/or `QueueHandleAdapterWriter`
@@ -86,7 +95,6 @@ without discussion.
 
 Runtime:
 - `importlib_metadata` — version detection (backport for Python 3.9)
-- `kitchen` / `processrunner-kitchenpatch` — UTF-8 encoding for pipe writers (`writeout.py`)
 
 Test:
 - `parameterized` — `@parameterized_class` for cartesian test generation
@@ -96,6 +104,51 @@ Test:
 
 Do not introduce alternative libraries for encoding or test parameterization
 without checking whether the existing ones already cover the use case.
+
+## Privacy and Secrets Check (REQUIRED before every commit)
+
+**This check is non-optional.** It is enforced automatically by the git
+pre-commit hook in `hooks/pre-commit`, which fires on every `git commit`.
+Agents must not attempt to bypass it (e.g. `--no-verify`).
+
+The hook runs `detect-secrets` against every staged file and blocks the commit
+if any potential secret (API key, private key, token, password, high-entropy
+string) is found that is not already in `.secrets.baseline`.
+
+**What the hook does automatically:**
+- Locates `detect-secrets` on PATH or in common tox/venv paths under the repo.
+- Scans every staged file.
+- Compares findings to `.secrets.baseline` (approved false positives).
+- Exits non-zero and prints the offending file/line/type if a new secret is
+  found.
+
+**If the hook fires on your commit:**
+1. Inspect the reported file and line.
+2. If it is a real secret, remove it from the staged content. Do not commit it.
+3. If it is a confirmed false positive (e.g. a test fixture or a doc example),
+   update the baseline and commit the updated baseline first:
+   ```
+   detect-secrets scan > .secrets.baseline
+   git add .secrets.baseline
+   git commit -m "chore: update secrets baseline (false positive: <reason>)"
+   ```
+   Include a brief reason in the commit message so reviewers can verify the
+   decision.
+
+**Fresh-clone setup** — `core.hooksPath = hooks` is stored in `.git/config`
+for this repo and is set automatically when the repo is cloned via the setup
+steps in `CONTRIBUTING.rst`. If you cloned without running setup, activate
+the hook manually:
+```
+git config core.hooksPath hooks
+pip install detect-secrets        # if not already in your active environment
+```
+
+**Never use `git commit --no-verify`.** There is no scenario where bypassing
+the secrets check is acceptable. If the hook is producing false positives,
+update `.secrets.baseline` as described above.
+
+---
 
 ## Agent Workflow
 
@@ -199,10 +252,50 @@ When a change introduces, removes, or materially changes a user-visible feature:
    any summary prose in the Introduction section.
 4. **Reconcile docs as the final phase of each feature.** Before marking a
    feature DONE in `tasks/TODO.md`, verify that inline docstrings, `docs/`
-   pages, and README are consistent with the implementation.
+   pages, README, and `CHANGELOG.rst` are consistent with the implementation.
 
-This rule applies to `README.rst` and all files under `docs/`. It does not
-apply to internal comments, task files, or this file itself.
+This rule applies to `README.rst`, `CHANGELOG.rst`, and all files under
+`docs/`. It does not apply to internal comments, task files, or this file
+itself.
+
+### Changelog
+
+``CHANGELOG.rst`` at the repo root is the single source of truth for
+user-visible changes. It is included verbatim in PyPI's long description and
+rendered in the Sphinx docs at ``docs/changelog.rst``.
+
+**Format** — `Keep a Changelog <https://keepachangelog.com/en/1.1.0/>`_:
+
+- Top section is always **Unreleased** — add entries here while work is in
+  progress on a branch.
+- Each released version gets its own section headed ``vX.Y.Z — YYYY-MM-DD``.
+- Within each section, group entries under: ``Added``, ``Changed``,
+  ``Deprecated``, ``Removed``, ``Fixed``, ``Security``.  Omit empty groups.
+- Write entries from the *user's* perspective — what they can now do, what
+  changed for them, what was fixed. Reference FEAT-NNN for traceability but
+  lead with the effect, not the ticket number.
+
+**When to update** — update ``CHANGELOG.rst`` as part of the feature work,
+not after. The reconciliation step (final phase of each feature) must include
+a changelog entry. Specifically:
+
+- **Added**: new public classes, methods, parameters, or CLI flags.
+- **Changed**: behavioural changes to existing public API (even if
+  backwards-compatible).
+- **Deprecated**: anything marked deprecated in code or docs.
+- **Removed**: anything deleted from the public API.
+- **Fixed**: user-visible bugs. Internal refactors that do not change
+  observable behaviour do not need a changelog entry.
+
+**On release** — when a git tag is applied, move the *Unreleased* entries into
+a new versioned section immediately below. The *Unreleased* section should then
+be left empty (but present) for the next batch of changes.
+
+Do not add changelog entries for:
+- Internal renames with no public API effect.
+- Pure task-tracking or documentation-only changes (unless they fix incorrect
+  user-facing docs).
+- CI / tox / tooling changes invisible to library users.
 
 ## Coding Conventions
 
@@ -348,6 +441,11 @@ tox -e bandit
   SimpleQueue with multiple consumers, or a missing `stop()` call on a QueueLink.
 - Pylint may report issues not caught by your IDE because the tox pylint env reads
   `setup.cfg` `[pylint.*]` sections that IDEs often miss.
+
+## Commits
+Commits must be signed by a committer before they can be pushed to an origin branch. 
+Progress commits can be made without signing, but must be signed by the committer
+before pushing to the remote branch.
 
 ## CI/CD
 

@@ -261,9 +261,16 @@ To quickly link a pipe or handle with a queue, use ``QueueHandleAdapterReader``.
     text_out = dest_q.get()
     print(text_out)
 
+Performance
+===========
+
+Throughput benchmarks (latency, elements-per-second, and handle-adapter throughput) are
+available as developer tools in the `benchmarks/ <benchmarks/README.md>`_ directory.
+See ``benchmarks/README.md`` for when to run them and how to interpret results.
+
 Other Notes
 ===========
 
 Tuning link_timeout
 -------------------
-Under heavily loaded conditions the "publisher" process/thread can thrash when trying to retrieve records from the source queue. Tuning link_timeout higher (default 0.1 seconds) can improve responsiveness. Higher values might be less responsive to stop requests and throw warnings during shutdown.
+Under heavily loaded conditions the "publisher" process/thread can thrash when trying to retrieve records from the source queue. Tuning link_timeout higher (default 0.01 seconds) can improve responsiveness. Higher values might be less responsive to stop requests and throw warnings during shutdown.

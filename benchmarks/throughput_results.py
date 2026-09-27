@@ -1,12 +1,11 @@
 """Store and retrieve results from throughput tests"""
 import os
+import platform
 import sqlite3
 import sys
 
 from datetime import datetime
 from typing import Union
-
-DB_NAME = 'throughput/throughput.sqlite.db'
 
 CURRENT_SESSION_TABLE_NAME = 'current_session'
 CURRENT_SESSION_TABLE_SCHEMA = 'parent_process_id, session_id, session_time, ' \
@@ -19,6 +18,9 @@ RESULT_TABLE_NAME = 'results'
 RESULT_TABLE_SCHEMA = 'session_id, python_version, test_name, start_method, source, destination, ' \
                       'result, result_unit'
 
+HOST_INFO_TABLE_NAME = 'host_info'
+HOST_INFO_TABLE_SCHEMA = 'session_id, hostname, cpu_model, cpu_count, python_version, os_platform, UNIQUE(session_id)'
+
 
 class ThroughputResults(object):
     """Manage results storage for QueueLink throughput tests."""
@@ -27,29 +29,48 @@ class ThroughputResults(object):
                  session_time: datetime,
                  start_method: str,
                  source_path: str,
-                 dest_path: str):
+                 dest_path: str,
+                 db_path: str = None):
+        """Initialize storage, create tables, and start a session.
+
+        Args:
+            session_id: Unique identifier for the benchmark session.
+            session_time: Timestamp when the session started.
+            start_method: Multiprocessing start method (fork, forkserver, spawn).
+            source_path: Dotted path of the source queue type.
+            dest_path: Dotted path of the destination queue type.
+            db_path: Path to the SQLite database file. Defaults to
+                benchmarks/throughput/throughput.sqlite.db relative to this file.
+        """
         self.session_id = session_id
         self.session_time = session_time
         self.start_method = start_method
         self.source_path = source_path
         self.dest_path = dest_path
-        self.db = sqlite3.connect(DB_NAME)
+
+        if db_path is None:
+            db_path = os.path.join(os.path.dirname(__file__), 'throughput', 'throughput.sqlite.db')
+
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self.db = sqlite3.connect(db_path)
 
         # Create tables if needed
         cursor = self.db.cursor()
         for tbl, schema in [(TEST_SESSION_TABLE_NAME, TEST_SESSION_TABLE_SCHEMA),
                             (RESULT_TABLE_NAME, RESULT_TABLE_SCHEMA),
-                            (CURRENT_SESSION_TABLE_NAME, CURRENT_SESSION_TABLE_SCHEMA)]:
+                            (CURRENT_SESSION_TABLE_NAME, CURRENT_SESSION_TABLE_SCHEMA),
+                            (HOST_INFO_TABLE_NAME, HOST_INFO_TABLE_SCHEMA)]:
             result = cursor.execute('SELECT name FROM sqlite_master WHERE name=?', (tbl,))
             if result.fetchone() is None:
-                cursor.execute('CREATE TABLE IF NOT EXISTS ?(?)', (tbl, schema))
+                cursor.execute(f'CREATE TABLE IF NOT EXISTS {tbl}({schema})')  # nosec
 
         # Session entry
         self.update_session_id()
         self.start_session()
+        self._write_host_info()
 
     def update_session_id(self):
-        """Uses parent PID to determine if we should use a different session ID and start time"""
+        """Uses parent PID to determine if we should use a different session ID and start time."""
         ppid = os.getppid()
         cursor = self.db.cursor()
         result = cursor.execute('SELECT parent_process_id, session_id, session_time FROM '
@@ -66,7 +87,7 @@ class ThroughputResults(object):
             time = self.session_time.strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute('INSERT INTO '
                            f'{CURRENT_SESSION_TABLE_NAME} '  # nosec
-                           'VALUES ?, ?, ?',
+                           'VALUES (?, ?, ?)',
                            (ppid, self.session_id, time))
             self.db.commit()
 
@@ -87,10 +108,31 @@ class ThroughputResults(object):
                        (self.session_id, time))
         self.db.commit()
 
+    def _write_host_info(self):
+        """Write host context for this session (one row per session)."""
+        cursor = self.db.cursor()
+        cursor.execute(
+            'INSERT OR IGNORE INTO '
+            f'{HOST_INFO_TABLE_NAME} '  # nosec
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            (self.session_id,
+             platform.node(),
+             platform.processor(),
+             os.cpu_count(),
+             sys.version,
+             platform.platform()))
+        self.db.commit()
+
     def put(self, test_name: str,
             result: Union[int, float],
             result_unit: str):
-        """Store a test result"""
+        """Store a test result.
+
+        Args:
+            test_name: Name identifying the benchmark test.
+            result: Numeric result value.
+            result_unit: Unit string (e.g. 'seconds', 'elements_per_second').
+        """
         python_version = f'{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}'
         cursor = self.db.cursor()
         cursor.execute('INSERT INTO '
@@ -103,22 +145,39 @@ class ThroughputResults(object):
 
 class ThroughputResultsOutput():
     """Format throughput results."""
-    def __init__(self):
-        self.db = sqlite3.connect(DB_NAME)
+    def __init__(self, db_path: str = None):
+        """Initialize output reader.
+
+        Args:
+            db_path: Path to the SQLite database file. Defaults to
+                benchmarks/throughput/throughput.sqlite.db relative to this file.
+        """
+        if db_path is None:
+            db_path = os.path.join(os.path.dirname(__file__), 'throughput', 'throughput.sqlite.db')
+
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self.db = sqlite3.connect(db_path)
         self.db.row_factory = sqlite3.Row  # Set the kind of result objects that get returned
 
     def get_latest_session_id(self):
-        """Get the session ID of the latest throughput session"""
+        """Get the session ID of the latest throughput session."""
         cursor = self.db.cursor()
         sql = ('SELECT session_id FROM '
                f'{TEST_SESSION_TABLE_NAME} '  # nosec
                'ORDER BY time DESC LIMIT 1')
         results = cursor.execute(sql).fetchone()
 
-        return results['session_id'] if len(results) > 0 else None
+        return results['session_id'] if results is not None else None
 
-    def get_session_results(self, session_id: str=None):
-        """Get results of the specified (or latest) session"""
+    def get_session_results(self, session_id: str = None):
+        """Get results of the specified (or latest) session.
+
+        Args:
+            session_id: Session ID to retrieve. If None, uses the latest session.
+
+        Returns:
+            List of rows; first row is the column names.
+        """
         if session_id is None:
             session_id = self.get_latest_session_id()
 

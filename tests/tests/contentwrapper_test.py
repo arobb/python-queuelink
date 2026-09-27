@@ -6,7 +6,6 @@ import pickle
 import unittest
 
 from pickle import PickleError, UnpicklingError
-from kitchen.text.converters import to_bytes
 from queuelink.contentwrapper import ContentWrapper, get_len, of_bytes_length
 from queuelink.contentwrapper import TYPES
 
@@ -247,6 +246,41 @@ class QueueLinkContentWrapperTestCase(unittest.TestCase):
         self.assertEqual(cw,
                          unpickled,
                          "ContentWrapper not equivalent after pickling/unpickling")
+
+    # --- Binary (bytes) support ---
+
+    def test_queuelink_contentwrapper_bytes_under_threshold(self):
+        data = b'\x00\x01\x02\xff\xfe\n\r' * 10
+        cw = ContentWrapper(data)
+        self.assertEqual(TYPES.DIRECT, cw.storage_type,
+                         "small bytes value should use DIRECT storage")
+        self.assertIsInstance(cw.value, bytes,
+                              "bytes value should remain bytes (under threshold)")
+        self.assertEqual(data, cw.value,
+                         "bytes round-trip failed (under threshold)")
+
+    def test_queuelink_contentwrapper_bytes_over_threshold(self):
+        # Build a bytes blob with all 256 byte values, larger than the threshold.
+        pattern = bytes(range(256))
+        repeats = (ContentWrapper.THRESHOLD // len(pattern)) + 2
+        data = pattern * repeats
+        cw = ContentWrapper(data)
+        self.assertEqual(TYPES.FILE, cw.storage_type,
+                         "large bytes value should use FILE storage")
+        self.assertIsInstance(cw.value, bytes,
+                              "bytes value should remain bytes after FILE round-trip")
+        self.assertEqual(data, cw.value,
+                         "bytes round-trip failed (over threshold)")
+
+    def test_queuelink_contentwrapper_bytes_double_read_over_threshold(self):
+        pattern = bytes(range(256))
+        repeats = (ContentWrapper.THRESHOLD // len(pattern)) + 2
+        data = pattern * repeats
+        cw = ContentWrapper(data)
+        read1 = cw.value
+        read2 = cw.value
+        self.assertEqual(data, read2,
+                         "bytes double-read failed (over threshold)")
 
 
 if __name__ == "__main__":

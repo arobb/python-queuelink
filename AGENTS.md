@@ -176,6 +176,59 @@ steps), agents must plan and track their work to avoid context bloat:
 Do not rely on chat history or context memory to track multi-step progress.
 The progress file is the source of truth for where the task stands.
 
+## Agent Roles (L0/L1)
+
+Work in this repository is coordinated by an **L0 orchestrator** session that
+does not write product code or product documentation itself. All
+implementation is done by **L1 subagents** the orchestrator delegates to.
+
+### L0 (orchestrator)
+
+- Reads `REVIEW-NNN` documents and the task board, breaks features into
+  concrete subtasks, and delegates each to an L1 subagent with a
+  self-contained prompt: files to touch, the relevant `PLAN.md` excerpt,
+  acceptance criteria.
+- Owns the orchestration/harness layer and may edit it directly: `tasks/**`
+  (`TODO.md`, `PLAN.md`, `PROGRESS.md`, `DECISIONS.md`), `AGENTS.md`,
+  `HARNESS.md`, and `.claude/**`.
+- Does not edit product files directly — `src/**`, `tests/**`,
+  `benchmarks/**`, `docs/**`, `README.rst`, `CHANGELOG.rst`, or packaging
+  files (`setup.py`, `setup.cfg`, `pyproject.toml`, `requirements*.txt`).
+  This is enforced by a `PreToolUse` hook
+  (`.claude/hooks/block-orchestrator-writes.sh`, wired in
+  `.claude/settings.json`) that denies `Edit`/`Write`/`NotebookEdit` on these
+  paths when the call comes from the top-level session; it does not apply to
+  subagents, which carry an `agent_id` the top-level session's own tool calls
+  never have.
+- Runs verification itself — `tox`/`pylint`/`bandit`, reading diffs — since
+  running tests and reading output is not "writing code."
+- Coordinates git operations (commits, PRs) on top of subagent-produced
+  changes.
+
+### L1 (implementation subagents)
+
+- Do the actual work — code, tests, docstrings, README/CHANGELOG/docs edits,
+  packaging changes — following every convention in this file.
+- Are dispatched via the Agent tool. L0 picks the model per task by its
+  difficulty and risk rather than a fixed rule:
+  - Sonnet is the reasonable default for most implementation work.
+  - Opus is worth it for design-heavy or correctness-critical work (e.g.
+    concurrency/shutdown logic, lifecycle/data-loss bugs) and for
+    independent review passes.
+  - Haiku is fine for narrow, mechanical, documentation-only changes
+    (changelog entries, README pointers, docstring wording) where there's
+    little judgment to exercise.
+  These are starting points, not a rulebook — L0 is expected to size the
+  model to the task rather than default to one tier everywhere.
+
+### Review
+
+- High-risk features — liveness/shutdown bugs, data-loss/lifecycle bugs;
+  currently FEAT-010 and FEAT-011 — get an independent reviewer subagent,
+  distinct from the implementer, before L0 marks the feature DONE.
+- Lower-risk or mechanical features are reviewed by L0 directly: reading the
+  diff and running `tox`/`pylint`/`bandit`.
+
 ## Task Coordination
 
 This section applies when multiple agents work concurrently. For single-agent

@@ -37,6 +37,8 @@ to human and agent contributors.
 | `.github/workflows/publish.yaml` | GitHub Actions | OIDC trusted publishing to PyPI |
 | `.github/rulesets/` | GitHub | Branch/tag protection — enforces PR workflow, linear history, signed commits |
 | `setup.cfg` | tox, pytest, coverage, pylint | Test configuration, lint rules, coverage settings |
+| `.claude/settings.json` | Claude Code | Project-wide hook wiring (checked in) — currently the L0 write-block hook |
+| `.claude/hooks/block-orchestrator-writes.sh` | Claude Code (`PreToolUse` hook) | Blocks the top-level ("L0") session from editing product files directly, forcing delegation to subagents — see `AGENTS.md` § Agent Roles (L0/L1) |
 
 ## How it works in practice
 

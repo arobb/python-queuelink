@@ -15,3 +15,6 @@ throughput
 # then re-ignore everything in it, then allow specific files.
 .claude/*
 !.claude/CLAUDE.md
+# Project-wide harness guardrails (checked in; settings.local.json stays ignored)
+!.claude/settings.json
+!.claude/hooks/

@@ -221,9 +221,10 @@ Advanced Parameters
     ``WRAP_WHEN.AUTO``.
 
 ``link_timeout``
-    Queue ``get()`` timeout (seconds) for internal publishers. Default
-    ``0.01``. Increase under heavy load to reduce thrashing; note that higher
-    values slow response to ``stop()``.
+    Seconds an internal publisher blocks on each source ``get()`` (or each
+    ``put()`` to a full destination) before checking for a stop request.
+    Default ``0.1``. It does not delay messages; lower values make ``stop()``
+    return faster, higher values mean fewer idle wakeups.
 
 ``trusted``
     For ``Connection`` sources — if ``True``, use ``.recv()``/``.send()``;

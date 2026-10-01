@@ -4,6 +4,7 @@ contents to a pipe"""
 from __future__ import unicode_literals
 
 import enum
+import errno
 import io
 import os
 import logging
@@ -24,6 +25,17 @@ from .common import (
     DIRECTION,
     UNION_SUPPORTED_IO_TYPES,
     UNION_SUPPORTED_PATH_TYPES)
+
+
+# errno values raised by os.fsync() on handles that cannot be fsynced (pipes,
+# sockets, ttys). Built defensively: not every errno name is defined on every
+# platform (e.g. ENOTSUP is absent from some Windows errno modules).
+FSYNC_IGNORED_ERRNOS = frozenset(
+    value for value in (
+        getattr(errno, 'EINVAL', None),
+        getattr(errno, 'ENOTSUP', None),
+        getattr(errno, 'EOPNOTSUPP', None))
+    if value is not None)
 
 
 def _is_binary_handle(handle) -> bool:
@@ -171,7 +183,18 @@ class QueueHandleAdapterWriter(_QueueHandleAdapterBase):
                 file_handle.flush()
 
             if hasattr(file_handle, 'fileno'):
-                os.fsync(file_handle.fileno())
+                try:
+                    os.fsync(file_handle.fileno())
+
+                except OSError as exc:
+                    # Pipes, sockets, and ttys are not fsyncable; ignore only those
+                    # errno values and re-raise anything else.
+                    if exc.errno in FSYNC_IGNORED_ERRNOS:
+                        log.debug('fsync not supported on this handle (errno %s); ignoring',
+                                 exc.errno)
+
+                    else:
+                        raise
 
         log = logging.getLogger(f'{__name__}.queue_handle_adapter.{name}')
         log.addHandler(logging.NullHandler())

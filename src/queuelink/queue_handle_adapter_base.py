@@ -229,7 +229,7 @@ class _QueueHandleAdapterBase(LoggingMixin):
         Does not force a drain of the queues.
         """
         if hasattr(self, '_stop') and hasattr(self, 'started'):
-            if self.started:
+            if self.started is not None and self.started.is_set():
                 self._stop()
 
         # Delete/unlink other resources

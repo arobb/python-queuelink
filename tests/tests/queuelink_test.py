@@ -6,6 +6,8 @@ import logging
 import os
 import queue
 import sys
+import threading
+import time
 import unittest
 import multiprocessing
 
@@ -630,6 +632,487 @@ class QueueLinkDynamicDestinationSpawnTest(unittest.TestCase):
                          "dst2 should receive messages after dynamic registration (spawn)")
 
         ql.stop()
+
+
+class QueueLinkIntQueueIdTest(unittest.TestCase):
+    """Regression tests for FEAT-010 bug 3: get_queue() / is_empty() must accept
+    an int queue_id, matching the ``Union[str, int]`` type hint both methods
+    already declare.
+
+    Not parameterized over queue types — this tests id normalization, not
+    queue-type compatibility.
+    """
+
+    def test_get_queue_accepts_int_id(self):
+        """get_queue(int(sid)) returns the same queue registered with read()."""
+        q = queue.Queue()
+        ql = QueueLink(name='int-id-test', thread_only=True)
+        sid = ql.read(q=q)
+
+        self.assertIs(ql.get_queue(int(sid)), q)
+
+        ql.stop()
+
+    def test_is_empty_accepts_int_id(self):
+        """is_empty(int(sid)) reports the same result as is_empty(str(sid))."""
+        q = queue.Queue()
+        ql = QueueLink(name='int-id-test', thread_only=True)
+        sid = ql.read(q=q)
+
+        self.assertTrue(ql.is_empty(int(sid)))
+
+        q.put('not empty anymore')
+        self.assertFalse(ql.is_empty(int(sid)))
+
+        ql.stop()
+
+    def test_unregister_queue_unknown_source_id_does_not_raise(self):
+        """unregister_queue(FROM) with an id never registered must not raise KeyError.
+
+        Regression guard for the same fix (010-1-2): publisher_stops.pop()
+        used to raise KeyError for an id that was never registered.
+        """
+        ql = QueueLink(name='int-id-test', thread_only=True)
+
+        result = ql.unregister_queue(queue_id='does-not-exist', direction=DIRECTION.FROM)
+        self.assertEqual('does-not-exist', result)
+
+        ql.stop()
+
+
+class QueueLinkEOFErrorTest(unittest.TestCase):
+    """Regression test for FEAT-010 bug 5: _publisher must exit instead of
+    busy-looping when a destination's put() raises EOFError.
+    """
+
+    class _EOFOnPutQueue:
+        """Minimal queue-like stub whose put() always raises EOFError."""
+
+        def put(self, item):  # pylint: disable=unused-argument
+            raise EOFError('destination gone')
+
+        def empty(self):
+            return True
+
+    def test_publisher_exits_when_destination_put_raises_eoferror(self):
+        """The publisher thread stops (is_alive() False) after a destination
+        raises EOFError on put(), instead of looping forever."""
+        src = queue.Queue()
+        dst = self._EOFOnPutQueue()
+        ql = QueueLink(source=src, destination=dst, thread_only=True)
+
+        src.put('trigger')
+
+        publisher = list(ql.client_pair_publishers.values())[0]
+
+        timeout_timer = Timer(interval=10)
+        while publisher.is_alive():
+            if timeout_timer.interval():
+                ql.stop()
+                self.fail('Publisher did not exit after destination raised EOFError')
+
+            time.sleep(0.01)
+
+        self.assertFalse(publisher.is_alive())
+
+
+class QueueLinkDirectionStrTest(unittest.TestCase):
+    """Regression tests for FEAT-010 bug 6: direction validation must accept
+    DIRECTION's string values and behave identically across Python versions.
+
+    Before the fix, ``"source" in DIRECTION`` raised TypeError on Python
+    3.9-3.11 but returned a bool on 3.12+ (Enum.__contains__ semantics
+    changed), so passing a string was accepted or rejected depending on the
+    interpreter version. validate_direction now converts via
+    ``DIRECTION(value)``, which is version-independent.
+    """
+
+    def test_register_queue_accepts_source_string(self):
+        q = queue.Queue()
+        ql = QueueLink(name='dir-str-test', thread_only=True)
+
+        client_id = ql.register_queue(q=q, direction='source')
+        self.assertIn(client_id, ql.client_queues_source)
+
+        ql.stop()
+
+    def test_register_queue_accepts_destination_string(self):
+        q = queue.Queue()
+        ql = QueueLink(name='dir-str-test', thread_only=True)
+
+        client_id = ql.register_queue(q=q, direction='destination')
+        self.assertIn(client_id, ql.client_queues_destination)
+
+        ql.stop()
+
+    def test_register_queue_rejects_invalid_string_with_value_error(self):
+        q = queue.Queue()
+        ql = QueueLink(name='dir-str-test', thread_only=True)
+
+        with self.assertRaises(ValueError):
+            ql.register_queue(q=q, direction='not-a-direction')
+
+        ql.stop()
+
+
+def _call_within(test_case, func, bound, message):
+    """Run ``func`` in a daemon thread; fail ``test_case`` if it does not return
+    within ``bound`` seconds (instead of hanging the test run)."""
+    caller = threading.Thread(target=func, daemon=True)
+    caller.start()
+    caller.join(timeout=bound)
+
+    if caller.is_alive():
+        test_case.fail(message)
+
+
+def _wait_until_blocked_on_full_destination(test_case, dest, settle=0.5, bound=30):
+    """Wait until ``dest`` is full, then give the publisher time to pick up the next
+    source item and block trying to put it."""
+    timeout_timer = Timer(interval=bound)
+    while not dest.full():
+        if timeout_timer.interval():
+            test_case.fail('Destination never filled up')
+
+        time.sleep(0.01)
+
+    time.sleep(settle)
+
+
+class QueueLinkFullDestinationStopTest(unittest.TestCase):
+    """Regression tests for FEAT-010 bug 1: a publisher blocked putting to a full,
+    unconsumed destination must still stop.
+
+    Before the fix, ``dest_queue.put(line)`` had no timeout, so ``stop()`` (and
+    ``register_queue(TO)``, which stops every publisher first) looped on
+    ``join(timeout=1)`` forever. Thread publishers; see
+    ``QueueLinkFullDestinationStopProcessTest`` for process publishers.
+    """
+
+    STOP_BOUND = 3  # Seconds
+
+    def test_stop_returns_with_full_destination(self):
+        """stop() returns promptly while the publisher is blocked on a full destination,
+        and only the item the destination had room for was delivered."""
+        src = queue.Queue()
+        dst = queue.Queue(maxsize=1)
+        ql = QueueLink(source=src, destination=dst, name='full-dest')
+
+        for i in range(3):
+            src.put(f'item-{i}')
+
+        _wait_until_blocked_on_full_destination(self, dst)
+        publisher = list(ql.client_pair_publishers.values())[0]
+
+        with self.assertLogs('queuelink.queuelink.publisher', level='WARNING') as logs:
+            _call_within(self, ql.stop, self.STOP_BOUND,
+                         'stop() hung on a publisher blocked by a full destination')
+
+        self.assertFalse(publisher.is_alive())
+        self.assertIn('abandoned for 1 of 1 destination', '\n'.join(logs.output))
+
+        # item-0 delivered, item-1 abandoned, item-2 never taken from the source
+        self.assertEqual('item-0', dst.get_nowait())
+        self.assertTrue(dst.empty())
+        self.assertEqual('item-2', src.get_nowait())
+
+        # task_done() was called for both items taken from the source (delivered and
+        # abandoned); only item-2, just removed above without task_done(), remains
+        self.assertEqual(1, src.unfinished_tasks)
+
+    def test_register_destination_returns_with_full_destination(self):
+        """register_queue(TO) stops every publisher first; it must return promptly
+        while a publisher is blocked on a full destination."""
+        src = queue.Queue()
+        dst = queue.Queue(maxsize=1)
+        new_dst = queue.Queue()
+        ql = QueueLink(source=src, destination=dst, name='full-dest')
+
+        for i in range(3):
+            src.put(f'item-{i}')
+
+        _wait_until_blocked_on_full_destination(self, dst)
+
+        _call_within(self, lambda: ql.register_queue(q=new_dst, direction=DIRECTION.TO),
+                     self.STOP_BOUND,
+                     'register_queue(TO) hung on a publisher blocked by a full destination')
+
+        self.assertIn(new_dst, ql.client_queues_destination.values())
+        self.assertTrue(ql.is_alive())
+
+        # The restarted publisher is blocked on the still-full dst again; stop must
+        # still return
+        _call_within(self, ql.stop, self.STOP_BOUND,
+                     'stop() hung after register_queue(TO) on a full destination')
+
+    def test_partial_fan_out_delivers_to_destinations_with_room(self):
+        """On stop, only the full destination is abandoned; a destination with room
+        still receives the item."""
+        src = queue.Queue()
+        dst_full = queue.Queue(maxsize=1)
+        dst_open = queue.Queue()
+        ql = QueueLink(source=src, destination=[dst_full, dst_open], name='full-dest')
+
+        for i in range(3):
+            src.put(f'item-{i}')
+
+        _wait_until_blocked_on_full_destination(self, dst_full)
+
+        _call_within(self, ql.stop, self.STOP_BOUND,
+                     'stop() hung on a publisher blocked by a full destination')
+
+        self.assertEqual('item-0', dst_full.get_nowait())
+        self.assertTrue(dst_full.empty())
+
+        # dst_open is fanned out to after dst_full (registration order), so it gets
+        # item-1 after dst_full is abandoned
+        self.assertEqual('item-0', dst_open.get_nowait())
+        self.assertEqual('item-1', dst_open.get_nowait())
+        self.assertTrue(dst_open.empty())
+
+
+# Bounded process-capable queue types (Module, Class, Max size).
+# multiprocessing.SimpleQueue cannot be bounded, so it is not included.
+BOUNDED_PROCESS_QUEUE_TYPES = [
+    ('manager', 'Queue', 1),
+    ('manager', 'JoinableQueue', 1),
+    ('multiprocessing', 'Queue', 1),
+    ('multiprocessing', 'JoinableQueue', 1)
+]
+
+
+@parameterized_class(('queue_type', 'start_method'),
+                     itertools.product(BOUNDED_PROCESS_QUEUE_TYPES, PROC_START_METHODS))
+class QueueLinkFullDestinationStopProcessTest(unittest.TestCase):
+    """Process-publisher variant of ``QueueLinkFullDestinationStopTest`` (FEAT-010
+    bug 1), for each bounded process queue type and start method."""
+
+    STOP_BOUND = 3  # Seconds
+
+    def setUp(self):
+        self.module = self.queue_type[0]
+        self.class_name = self.queue_type[1]
+        self.max_size = self.queue_type[2]
+
+        self.multiprocessing_ctx = multiprocessing.get_context(self.start_method)
+        self.manager = None
+
+        if self.module == 'manager':
+            self.manager = self.multiprocessing_ctx.Manager()
+
+    def tearDown(self):
+        if self.manager is not None:
+            self.manager.shutdown()
+
+    def queue_factory(self, bounded=False):
+        maxsize = self.max_size if bounded else 0
+
+        if self.module == 'multiprocessing':
+            return getattr(self.multiprocessing_ctx, self.class_name)(maxsize=maxsize)
+
+        if self.module == 'manager':
+            return getattr(self.manager, self.class_name)(maxsize=maxsize)
+
+    def test_stop_returns_with_full_destination(self):
+        """stop() returns promptly while a process publisher is blocked on a full
+        destination."""
+        src = self.queue_factory()
+        dst = self.queue_factory(bounded=True)
+        ql = QueueLink(source=src, destination=dst, start_method=self.start_method)
+
+        publisher = list(ql.client_pair_publishers.values())[0]
+        self.assertFalse(isinstance(publisher, threading.Thread),
+                         'Expected a process-based publisher')
+
+        for i in range(3):
+            src.put(f'item-{i}')
+
+        _wait_until_blocked_on_full_destination(self, dst)
+
+        _call_within(self, ql.stop, self.STOP_BOUND,
+                     'stop() hung on a process publisher blocked by a full destination')
+
+        self.assertFalse(publisher.is_alive())
+        self.assertEqual('item-0', safe_get(dst, timeout=5))
+
+    def test_register_destination_returns_with_full_destination(self):
+        """register_queue(TO) returns promptly while a process publisher is blocked on
+        a full destination."""
+        src = self.queue_factory()
+        dst = self.queue_factory(bounded=True)
+        new_dst = self.queue_factory()
+        ql = QueueLink(source=src, destination=dst, start_method=self.start_method)
+
+        for i in range(3):
+            src.put(f'item-{i}')
+
+        _wait_until_blocked_on_full_destination(self, dst)
+
+        _call_within(self, lambda: ql.register_queue(q=new_dst, direction=DIRECTION.TO),
+                     self.STOP_BOUND,
+                     'register_queue(TO) hung on a process publisher blocked by a full '
+                     'destination')
+
+        _call_within(self, ql.stop, self.STOP_BOUND,
+                     'stop() hung after register_queue(TO) on a full destination')
+
+
+def _produce_items(q, items):
+    """Producer-process target: put ``items`` on ``q``. The producer's exit flushes its
+    feeder thread, so once the process is joined every item is in ``q``'s pipe and
+    ``q.empty()`` in the parent reliably means "consumed"."""
+    for item in items:
+        q.put(item)
+
+
+# multiprocessing queue types whose put() goes through a per-process feeder thread
+# (Module, Class)
+FEEDER_THREAD_QUEUE_TYPES = [
+    ('multiprocessing', 'Queue'),
+    ('multiprocessing', 'JoinableQueue')
+]
+
+
+@parameterized_class(('queue_type', 'start_method'),
+                     itertools.product(FEEDER_THREAD_QUEUE_TYPES, PROC_START_METHODS))
+class QueueLinkUnreadDestinationStopProcessTest(unittest.TestCase):
+    """Regression test for FEAT-010 Q5: a process publisher whose *unbounded*
+    destination nobody reads must still stop.
+
+    The destination never blocks ``put()``, so the FEAT-010 bug 1 fix does not apply.
+    Instead the publisher's own feeder thread buffers everything the OS pipe cannot
+    take. Before the fix the publisher process blocked at exit joining that feeder
+    thread, so ``stop()`` looped on ``join(timeout=1)`` forever.
+
+    Run for every start method, not just fork. The hang is in the child's exit path,
+    and that path differs by start method (``os._exit`` after a fork vs. the
+    spawn/forkserver bootstrap). The hang was reproduced manually under all three.
+    Each case takes about a second.
+    """
+
+    STOP_BOUND = 3  # Seconds
+    ITEM_COUNT = 64  # 64 x 4 KiB = 256 KiB, well past a 64 KiB OS pipe buffer
+
+    def test_stop_returns_with_unread_unbounded_destination(self):
+        """stop() returns promptly when an unbounded destination holds more unread
+        data than the OS pipe buffer."""
+        ctx = multiprocessing.get_context(self.start_method)
+        src = getattr(ctx, self.queue_type[1])()
+        dst = getattr(ctx, self.queue_type[1])()
+        ql = QueueLink(source=src, destination=dst, start_method=self.start_method)
+
+        publisher = list(ql.client_pair_publishers.values())[0]
+        self.assertFalse(isinstance(publisher, threading.Thread),
+                         'Expected a process-based publisher')
+
+        producer = ctx.Process(target=_produce_items,
+                               args=(src, [f'{i:04d}' + 'x' * 4092
+                                           for i in range(self.ITEM_COUNT)]))
+        producer.start()
+        producer.join()
+
+        # Wait until the publisher has taken everything from the source, so the
+        # overflow is sitting in its feeder-thread buffer
+        timeout_timer = Timer(interval=30)
+        while not src.empty():
+            if timeout_timer.interval():
+                self.fail('Publisher never drained the source')
+
+            time.sleep(0.01)
+
+        time.sleep(0.5)
+
+        _call_within(self, ql.stop, self.STOP_BOUND,
+                     'stop() hung on a process publisher with an unread, unbounded '
+                     'destination')
+
+        self.assertFalse(publisher.is_alive())
+
+        # Whatever reached the pipe is still readable, in order
+        self.assertTrue(safe_get(dst, timeout=5).startswith('0000'))
+
+
+class QueueLinkStopFlushesDestinationTest(unittest.TestCase):
+    """The FEAT-010 Q5 fix must not drop items that a *read* destination can still
+    accept when the publisher stops.
+
+    ``cancel_join_thread()`` on its own drops everything still in the publisher's
+    feeder-thread buffer at exit. With a consumer reading slower than the publisher
+    writes, that lost hundreds of items in about 1 run in 5 when this was checked
+    manually. The fix first lets the buffer flush, with a time limit. Fork only: this
+    checks the flush-before-cancel logic, which does not depend on the start method.
+
+    The loss is timing-dependent, so this test catches a cancel-only fix in about
+    half of runs, not every run. It passes reliably with the bounded flush.
+    """
+
+    ITEM_COUNT = 3000
+    ROUNDS = 3
+
+    def test_stop_delivers_everything_taken_from_the_source(self):
+        """Every item the publisher took from the source reaches an actively read
+        destination after stop()."""
+        ctx = multiprocessing.get_context('fork')
+        payload = 'x' * 4096
+
+        for _ in range(self.ROUNDS):
+            src = ctx.Queue()
+            dst = ctx.Queue()
+            ql = QueueLink(source=src, destination=dst, start_method='fork')
+
+            received = []
+
+            def consume(dst=dst, received=received):
+                while True:
+                    try:
+                        received.append(dst.get(timeout=2))
+                    except queue.Empty:
+                        return
+
+            consumer = threading.Thread(target=consume, daemon=True)
+            consumer.start()
+
+            producer = ctx.Process(target=_produce_items,
+                                   args=(src, [(i, payload)
+                                               for i in range(self.ITEM_COUNT)]))
+            producer.start()
+            producer.join()
+
+            timeout_timer = Timer(interval=60)
+            while not src.empty():
+                if timeout_timer.interval():
+                    self.fail('Publisher never drained the source')
+
+                time.sleep(0.0005)
+
+            ql.stop()
+            consumer.join(timeout=60)
+
+            self.assertEqual(list(range(self.ITEM_COUNT)), [i for i, _ in received])
+
+
+class QueueLinkThreadPublisherLeavesDestinationOpenTest(unittest.TestCase):
+    """The FEAT-010 Q5 fix must only touch a process publisher's own copies of its
+    destinations. A thread publisher shares the caller's queue objects, so closing
+    them or cancelling their feeder join would break the caller's queue."""
+
+    def test_multiprocessing_destination_usable_after_thread_publisher_stops(self):
+        src = queue.Queue()  # A threading source forces a thread publisher
+        dst = multiprocessing.get_context('fork').Queue()
+        ql = QueueLink(source=src, destination=dst)
+
+        publisher = list(ql.client_pair_publishers.values())[0]
+        self.assertTrue(isinstance(publisher, threading.Thread),
+                        'Expected a thread-based publisher')
+
+        src.put('via-link')
+        self.assertEqual('via-link', safe_get(dst, timeout=5))
+
+        ql.stop()
+
+        # Raises ValueError("Queue ... is closed") if the publisher closed it
+        dst.put('after-stop')
+        self.assertEqual('after-stop', safe_get(dst, timeout=5))
 
 
 if __name__ == "__main__":

@@ -256,7 +256,7 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
         trusted: bool = False,
         wrap_when: WRAP_WHEN = WRAP_WHEN.NEVER,
         wrap_threshold: int = None,
-        link_timeout: float = 0.01):
+        link_timeout: float = 0.1):
     """Wire a source and destination together automatically.
 
     Inspects the types of ``source`` and ``destination`` and creates the
@@ -279,7 +279,10 @@ def link(  # pylint: disable=too-many-locals,too-many-branches,too-many-statemen
             buffering. Only applies when a reader adapter is created.
         wrap_threshold: Byte size limit before wrapping. Only relevant when
             ``wrap_when`` is ``WRAP_WHEN.AUTO``.
-        link_timeout: ``queue.get()`` timeout for ``QueueLink`` publishers.
+        link_timeout: Seconds a ``QueueLink`` publisher blocks on each source
+            ``get()`` / full-destination ``put()`` before re-checking for a stop
+            request (default 0.1). Bounds ``stop()`` responsiveness; does not
+            delay messages.
 
     Returns:
         A ``_LinkResult`` instance with ``stop()``, ``close()``, and

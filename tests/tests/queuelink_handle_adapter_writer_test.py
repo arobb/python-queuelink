@@ -4,8 +4,10 @@ import logging
 import multiprocessing
 import queue
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -265,6 +267,75 @@ class QueueHandleAdapterWriterWriteModeTest(unittest.TestCase):
                 self.assertEqual(fh.read(), data)
         finally:
             os.unlink(fname)
+
+
+class QueueHandleAdapterWriterFsyncPipeTest(unittest.TestCase):
+    """Focused regression test for FEAT-010 bug 2: flush() must tolerate
+    os.fsync() failures on handles that are not fsyncable (pipes).
+
+    Uses a thread-based queue and a real subprocess pipe (rather than a mock)
+    so the test exercises the actual OSError raised by the OS for
+    ``os.fsync()`` on a pipe file descriptor (``EINVAL`` on Linux).
+    """
+
+    def test_flush_tolerates_fsync_oserror_on_pipe(self):
+        """Writing to a subprocess pipe must not raise an unhandled thread
+        exception, and the subprocess must receive the full line.
+
+        Before the fix, flush()'s unconditional os.fsync() call raised
+        OSError: [Errno 22] Invalid argument on a pipe, killing the writer
+        thread silently.
+        """
+        q = queue.Queue()
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            ['cat'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+        thread_exceptions = []
+
+        def excepthook(args):
+            thread_exceptions.append(args)
+
+        original_hook = threading.excepthook
+        threading.excepthook = excepthook
+
+        try:
+            writer = QueueHandleAdapterWriter(
+                name='fsync-pipe-test',
+                queue=q,
+                handle=proc.stdin,
+                thread_only=True)
+
+            line = 'hello pipe\n'
+            q.put(line)
+
+            # Wait until the writer has processed the line.
+            timeout_timer = Timer(interval=10)
+            while writer.get_messages_processed() < 1:
+                if timeout_timer.interval():
+                    writer.close()
+                    self.fail('Timed out waiting for writer to process the line')
+                time.sleep(0.01)
+
+            # Wait past the 1-second flush timer so a periodic flush() (in
+            # addition to the final flush on close()) exercises the fsync path.
+            time.sleep(1.5)
+
+            writer.close()
+
+            # communicate() flushes and closes stdin itself; closing it
+            # ourselves first would make communicate() raise ValueError on
+            # the already-closed file.
+            output, _ = proc.communicate(timeout=10)
+
+        finally:
+            threading.excepthook = original_hook
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+
+        self.assertEqual([], thread_exceptions,
+                         f'Writer thread raised unhandled exception(s): {thread_exceptions}')
+        self.assertEqual(line, output)
 
 
 if __name__ == "__main__":

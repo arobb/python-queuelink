@@ -273,4 +273,15 @@ Other Notes
 
 Tuning link_timeout
 -------------------
-Under heavily loaded conditions the "publisher" process/thread can thrash when trying to retrieve records from the source queue. Tuning link_timeout higher (default 0.01 seconds) can improve responsiveness. Higher values might be less responsive to stop requests and throw warnings during shutdown.
+``link_timeout`` (default 0.1 seconds) is how long each "publisher" process/thread blocks on a ``get()`` from a source queue, or on a ``put()`` to a full destination queue, before checking whether it has been asked to stop.
+
+It does not add latency to messages: a blocked ``get()`` returns as soon as an item arrives, however long the timeout is. What it controls is:
+
+* **Stop responsiveness** — ``stop()``, and ``register_queue()``/``unregister_queue()`` (which restart publishers), can take up to about ``link_timeout`` per publisher to return.
+* **Idle wakeups** — an idle publisher wakes about ``1 / link_timeout`` times per second. The previous 0.01 second default meant ~100 wakeups per second per publisher.
+
+Lower it if you need ``stop()`` to return faster; raise it to reduce idle CPU use further.
+
+If ``stop()`` is requested while a publisher is waiting on a full destination queue that nobody is reading, the publisher gives up on that item for that destination (other destinations with room still receive it), logs a warning, and exits.
+
+``multiprocessing.SimpleQueue`` sources are the exception: their ``get()`` has no timeout, so they are polled every 5 ms while idle, whatever ``link_timeout`` is. An item arriving while idle can wait up to 5 ms to be picked up.

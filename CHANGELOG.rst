@@ -12,6 +12,67 @@ Versions correspond to git tags; unreleased changes appear under *Unreleased*.
 Unreleased
 ----------
 
+Changed
+~~~~~~~
+
+- The default ``link_timeout`` for ``QueueLink`` and ``link()`` is now 0.1 s
+  (was 0.01 s). An idle publisher now wakes about 10 times per second instead of
+  about 100, cutting its idle CPU use by roughly 90%. Messages are not delayed,
+  because a publisher's ``get()`` returns as soon as an item arrives. The
+  trade-off is that ``stop()`` (and ``register_queue()``/``unregister_queue()``,
+  which restart publishers) can now take up to about 100 ms per publisher to
+  return, instead of about 10 ms. Pass ``link_timeout=0.01`` to keep the old
+  behavior. The same timeout now also limits how long each ``put()`` to a full
+  destination blocks (FEAT-010).
+
+Fixed
+~~~~~
+
+- ``QueueLink.stop()``, ``register_queue(..., DIRECTION.TO)`` and
+  ``unregister_queue()`` no longer hang forever when a destination queue is
+  full and nobody is reading it. Publishers now put to destinations in bounded
+  waits and check for a stop request between them. If a stop is requested while
+  a destination is still full, that item is dropped for that destination only.
+  Destinations with room still receive it, and a warning names the skipped
+  destination(s) (FEAT-010).
+- ``QueueLink.stop()``, ``register_queue(..., DIRECTION.TO)`` and
+  ``unregister_queue()`` no longer hang forever when a process publisher has an
+  *unbounded* ``multiprocessing.Queue``/``JoinableQueue`` destination that nobody
+  reads and that holds more than the OS pipe buffer (about 64 KiB). The publisher
+  process used to block at exit waiting for its feeder thread to flush into that
+  pipe. A stopping publisher now gives its destinations up to ``link_timeout`` to
+  flush. It then uses ``cancel_join_thread()`` on any that are still blocked,
+  dropping the items left in its buffer for those destinations only, and logs a
+  warning that names them. A destination whose reader keeps up still receives
+  everything. ``multiprocessing.SimpleQueue`` destinations have no feeder thread,
+  and this fix does not cover them (FEAT-010).
+
+- ``QueueHandleAdapterWriter``: writing to a pipe, socket, or tty no longer
+  crashes the writer thread/process with ``OSError: [Errno 22] Invalid
+  argument`` — ``flush()`` now tolerates the ``EINVAL``/``ENOTSUP``/
+  ``EOPNOTSUPP`` errors ``os.fsync()`` raises on handles that cannot be
+  fsynced, while still raising on other, unexpected ``OSError``\ s (FEAT-010).
+- ``QueueLink.get_queue()`` and ``QueueLink.is_empty()`` now accept an ``int``
+  queue ID (e.g. the value returned by ``read()``/``write()`` cast back to
+  ``int``) instead of raising ``KeyError``, matching the ``Union[str, int]``
+  type hint both methods already declared (FEAT-010).
+- ``QueueLink.unregister_queue()`` with ``direction=DIRECTION.FROM`` no longer
+  raises ``KeyError`` when given a queue ID that was never registered
+  (FEAT-010).
+- ``QueueLink.close()`` and the internal handle-adapter ``close()`` no longer
+  always attempt to stop an adapter/link that was never started — the check
+  now correctly tests whether the "started" event is set, instead of the
+  always-truthy ``Event`` object itself (FEAT-010).
+- A destination queue that raises ``EOFError`` on ``put()`` no longer causes
+  its publisher to busy-loop; the publisher now logs the final metrics and
+  exits, the same as it already did for a ``BrokenPipeError`` (FEAT-010).
+- ``register_queue()``/``unregister_queue()``/``destructive_audit()`` now
+  accept ``direction`` as either a ``DIRECTION`` member or its string value
+  (``"source"``/``"destination"``) consistently across all supported Python
+  versions, and raise ``ValueError`` (previously a version-dependent
+  ``TypeError`` that Python 3.12+ sometimes skipped) naming both valid values
+  for anything else (FEAT-010).
+
 ----
 
 v2.3.0 — 2026-09-27

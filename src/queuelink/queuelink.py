@@ -6,12 +6,13 @@ from typing import Dict, List, Union
 
 import functools
 import logging
+import time
 
 from builtins import str as text
 from inspect import signature
 import queue
 from queue import Empty, Full
-from threading import Thread  # For non-multi-processing queues
+from threading import Thread, current_thread, main_thread  # For non-multi-processing queues
 
 # Multiprocessing imports
 import multiprocessing
@@ -35,9 +36,14 @@ from .common import (
 def validate_direction(func):
     """Decorator to check that 'direction' is an acceptable value.
 
-    One of DIRECTION.FROM or DIRECTION.TO.
+    Accepts a DIRECTION member, or the string value of one
+    (``"source"``/``"destination"``), converting the latter into the matching
+    DIRECTION member before calling the wrapped function. This keeps behavior
+    identical across Python versions — ``Enum.__contains__`` accepts raw
+    string values on 3.12+ but not on 3.9-3.11, so membership testing alone is
+    version-dependent.
 
-    :raises TypeError
+    :raises ValueError
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -50,19 +56,204 @@ def validate_direction(func):
         if "direction" in bound.arguments:
             arg_direction = bound.arguments['direction']
 
-            # If the direction is valid, just keep going
-            if arg_direction in DIRECTION:
+            # Already a DIRECTION member: keep going
+            if isinstance(arg_direction, DIRECTION):
                 pass
 
-            # If the direction is invalid, throw an error
+            # A string matching one of DIRECTION's values: convert and rebind
             else:
-                raise TypeError(
-                    "destination must be a value from DIRECTION")
+                try:
+                    bound.arguments['direction'] = DIRECTION(arg_direction)
+
+                except ValueError as exc:
+                    valid_values = ", ".join(f'"{member.value}"' for member in DIRECTION)
+                    raise ValueError(
+                        f"direction must be a DIRECTION member or one of {valid_values}"
+                    ) from exc
+
+                args = bound.args
+                kwargs = bound.kwargs
 
         # Call the normal function
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def _put_accepts_timeout(dest_queue: UNION_SUPPORTED_QUEUES) -> bool:
+    """Whether ``dest_queue.put()`` accepts a ``timeout=`` keyword argument.
+
+    ``multiprocessing.SimpleQueue.put(obj)`` does not; every other supported queue
+    type (including manager proxies, whose methods take ``*args, **kwargs``) does.
+    Decided from the signature rather than by catching ``TypeError`` from a ``put()``
+    call, because ``put()`` can raise ``TypeError`` for unrelated reasons (e.g. an
+    unorderable item in a ``PriorityQueue``) and retrying those as a plain, blocking
+    ``put()`` could block forever on a full queue.
+    """
+    try:
+        signature(dest_queue.put).bind('item', timeout=0)
+
+    # No introspectable signature: assume the standard queue API
+    except ValueError:
+        return True
+
+    # Signature does not accept timeout=
+    except TypeError:
+        return False
+
+    return True
+
+
+def _put_until_stopped(dest_queue: UNION_SUPPORTED_QUEUES,
+                       item: object,
+                       stop_event: UNION_SUPPORTED_EVENTS,
+                       timeout: float,
+                       accepts_timeout: bool = True) -> bool:
+    """Put ``item`` on ``dest_queue``, retrying in bounded waits until it succeeds or a
+    stop is requested.
+
+    Each attempt blocks for at most ``timeout`` seconds, so a full, unconsumed
+    destination can no longer block a publisher indefinitely: after each timed-out
+    attempt the stop event is re-checked. At least one attempt is always made, so an
+    item is still delivered to a destination with room even if a stop was already
+    requested.
+
+    Args:
+        dest_queue: Destination queue
+        item: Element to put
+        stop_event: Stop event for the publisher
+        timeout: Seconds to block per attempt
+        accepts_timeout: Whether ``dest_queue.put()`` takes ``timeout=`` (see
+            ``_put_accepts_timeout``). When False (``multiprocessing.SimpleQueue``)
+            a plain ``put()`` is used: that queue type is unbounded and only blocks on
+            the underlying pipe write if its reader has stopped consuming.
+
+    Returns:
+        True if the item was put, False if a stop was requested while the destination
+        stayed full (the item was not delivered to this destination).
+    """
+    if not accepts_timeout:
+        dest_queue.put(item)
+        return True
+
+    while True:
+        try:
+            dest_queue.put(item, timeout=timeout)
+            return True
+
+        except Full:
+            if stop_event.is_set():
+                return False
+
+
+def _fan_out(item: object,
+             dest_queues_dict: Dict[str, UNION_SUPPORTED_QUEUES],
+             dest_accepts_timeout: Dict[str, bool],
+             stop_event: UNION_SUPPORTED_EVENTS,
+             timeout: float,
+             log: logging.Logger,
+             source_id: str) -> List[str]:
+    """Put ``item`` on every destination with ``_put_until_stopped``.
+
+    A destination that stays full after a stop is requested is abandoned (only that
+    one; the remaining destinations still get an attempt), and a warning names every
+    abandoned destination.
+
+    Args:
+        item: Element to distribute
+        dest_queues_dict: Destination queues by ID. Iterated over a snapshot, because a
+            thread publisher shares the live dict with its QueueLink.
+        dest_accepts_timeout: Per-destination cache of ``_put_accepts_timeout``, filled
+            in here as destinations are first seen
+        stop_event: Stop event for the publisher
+        timeout: Seconds to block per put attempt
+        log: Publisher logger
+        source_id: Source queue ID, for logging
+
+    Returns:
+        IDs of the destinations the item was not delivered to (empty if all succeeded)
+    """
+    destinations = list(dest_queues_dict.items())
+    undelivered = []
+
+    for dest_id, dest_queue in destinations:
+        log.info("Writing line from source %s to dest %s", source_id, dest_id)
+
+        if dest_id not in dest_accepts_timeout:
+            dest_accepts_timeout[dest_id] = _put_accepts_timeout(dest_queue)
+
+        if not _put_until_stopped(dest_queue, item, stop_event, timeout,
+                                  accepts_timeout=dest_accepts_timeout[dest_id]):
+            undelivered.append(dest_id)
+
+    if undelivered:
+        log.warning("Stop requested while destination(s) %s of source %s were full; "
+                    "item abandoned for %d of %d destination(s)",
+                    ", ".join(undelivered), source_id, len(undelivered), len(destinations))
+
+    return undelivered
+
+
+def _release_destinations(dest_queues_dict: Dict[str, UNION_SUPPORTED_QUEUES],
+                          timeout: float,
+                          log: logging.Logger,
+                          source_id: str) -> None:
+    """Keep a process publisher's exit from hanging on destination feeder threads.
+
+    A ``multiprocessing.Queue``/``JoinableQueue`` hands each ``put()`` to a per-process
+    feeder thread, and by default the process joins that thread at exit so everything
+    it buffered reaches the pipe. If nobody reads the destination and the buffer holds
+    more than the OS pipe can take, that join never returns and neither does the
+    publisher, so ``stop()`` hangs (FEAT-010 Q5).
+
+    Each such destination gets up to ``timeout`` seconds (the same bound as a stopping
+    publisher's last ``put()`` attempt) to flush, all destinations concurrently. A
+    destination that has not flushed by then gets ``cancel_join_thread()``, so exit
+    no longer waits for it and its remaining buffered items are dropped. A destination
+    whose reader keeps up flushes within the bound, so its items still arrive. One
+    whose reader has fallen far behind can lose the tail of the buffer.
+
+    Only a process publisher does this. The queue objects here are its own copies,
+    and the process is about to exit. A thread publisher shares the caller's queue
+    objects, and closing them or cancelling their join would affect the caller.
+    Types without a feeder thread (``queue.Queue``, manager proxies,
+    ``multiprocessing.SimpleQueue``) have no ``cancel_join_thread`` and are skipped.
+
+    Args:
+        dest_queues_dict: Destination queues by ID
+        timeout: Seconds to let the destinations flush before giving up on them
+        log: Publisher logger
+        source_id: Source queue ID, for logging
+    """
+    if current_thread() is not main_thread():
+        return  # Thread publisher: these are the caller's queue objects
+
+    flushers = []
+    for dest_id, dest_queue in list(dest_queues_dict.items()):
+        if not hasattr(dest_queue, 'cancel_join_thread'):
+            continue
+
+        # join_thread() requires close(); both only touch this process's copy
+        dest_queue.close()
+        flusher = Thread(target=dest_queue.join_thread, daemon=True,
+                         name=f'QueueLinkFlush-{dest_id}')
+        flusher.start()
+        flushers.append((dest_id, dest_queue, flusher))
+
+    deadline = time.monotonic() + timeout
+    for _, _, flusher in flushers:
+        flusher.join(max(0.0, deadline - time.monotonic()))
+
+    unflushed = []
+    for dest_id, dest_queue, flusher in flushers:
+        if flusher.is_alive():
+            dest_queue.cancel_join_thread()
+            unflushed.append(dest_id)
+
+    if unflushed:
+        log.warning("Destination(s) %s of source %s did not finish flushing within %s s "
+                    "of the publisher stopping (not being read?); their remaining "
+                    "buffered items were dropped", ", ".join(unflushed), source_id, timeout)
 
 
 class LimitedLengthQueue(object):
@@ -133,7 +324,7 @@ class QueueLink(LoggingMixin):
                  log_name: str=None,
                  start_method: str=None,
                  thread_only: bool=False,
-                 link_timeout: float=0.01):
+                 link_timeout: float=0.1):
         """Manages the pull/push with queues
 
         Args:
@@ -144,7 +335,11 @@ class QueueLink(LoggingMixin):
                 or just class name if ``name`` is not provided
             start_method: For multiprocess use: fork, spawn or forkserver
             thread_only: Only use threads, not separate processes, for links
-            link_timeout: Tune the queue.get(timeout=link_timeout) value; default 0.01 sec
+            link_timeout: Seconds each publisher ``get`` from a source, and each ``put``
+                to a full destination, blocks before re-checking for a stop request;
+                default 0.1 sec. Does not delay messages (``get`` returns as soon as an
+                item arrives); it bounds ``stop()`` responsiveness and sets how often an
+                idle publisher wakes up.
         """
         # Unique ID
         # Not used for cryptographic purposes, so excluding from Bandit
@@ -221,7 +416,7 @@ class QueueLink(LoggingMixin):
 
         # Make sure processes are stopped
         if hasattr(self, 'stop') and hasattr(self, 'started'):
-            if self.started:
+            if self.started is not None and self.started.is_set():
                 self.stop()
 
         # Unset these variables to release any objects they held
@@ -288,7 +483,7 @@ class QueueLink(LoggingMixin):
         self._stop_publishers()
 
     @staticmethod
-    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,
+    def _publisher(stop_event: UNION_SUPPORTED_EVENTS,  # pylint: disable=too-many-locals,too-many-statements
                    source_id: str,
                    source_queue: UNION_SUPPORTED_QUEUES,
                    dest_queues_dict: Dict[str, UNION_SUPPORTED_QUEUES],
@@ -303,7 +498,8 @@ class QueueLink(LoggingMixin):
             source_id: Source queue ID
             source_queue: Source queue object
             dest_queues_dict: Dictionary holding a set of destination queues
-            timeout: How long to wait for a message
+            timeout: How long each source ``get`` and each destination ``put`` attempt
+                blocks before re-checking ``stop_event``
             metrics_queue: Where to place metric snapshots (bounded; when full the
                 oldest entry is evicted to make room for the newest)
             metric_interval: How many messages between periodic metric emissions
@@ -347,11 +543,17 @@ class QueueLink(LoggingMixin):
 
         counting_metric_id = metrics.add_element(MetricType.COUNTING, name='movement count')
 
+        # Cache of which destinations accept put(timeout=), filled lazily. Lazily rather
+        # than up front because a thread publisher shares the live destination dict, and
+        # register_queue(TO) adds the new entry before it stops the publishers.
+        dest_accepts_timeout = {}
+
         while True:
             # Check for stop
             if stop_event.is_set():
                 log.info("Stopping due to stop event")
                 _emit_metrics()
+                _release_destinations(dest_queues_dict, timeout, log, source_id)
                 return
 
             try:
@@ -359,15 +561,20 @@ class QueueLink(LoggingMixin):
                           source_id)
                 line = safe_get(source_queue, timeout=timeout, stop_event=stop_event)
 
-                # Distribute the line to all downstream queues
-                for dest_id, dest_queue in dest_queues_dict.items():
-                    log.info("Writing line from source %s to dest %s",
-                             source_id, dest_id)
-                    dest_queue.put(line)
+                # Distribute the line to all downstream queues. Each put is bounded and
+                # re-checks the stop event, so a full destination cannot block stop().
+                undelivered = _fan_out(line, dest_queues_dict, dest_accepts_timeout,
+                                       stop_event, timeout, log, source_id)
 
-                # Mark that we've finished processing the item from the queue
+                # The delivery/abandon decision has now been made for every destination
                 if hasattr(source_queue, 'task_done'):
                     source_queue.task_done()
+
+                # Stop requested while destination(s) stayed full (already logged)
+                if undelivered:
+                    _emit_metrics()
+                    _release_destinations(dest_queues_dict, timeout, log, source_id)
+                    return
 
                 # Mark latency
                 counter += 1
@@ -384,10 +591,14 @@ class QueueLink(LoggingMixin):
 
             except EOFError:
                 log.debug("Source in pair %s no longer available", source_id)
+                _emit_metrics()
+                _release_destinations(dest_queues_dict, timeout, log, source_id)
+                return
 
             except BrokenPipeError:
                 log.debug("One pipe in pair %s is no longer available",
                           name if name else source_id)
+                _release_destinations(dest_queues_dict, timeout, log, source_id)
                 return
 
     def get_queue(self, queue_id: Union[str, int]) -> UNION_SUPPORTED_QUEUES:
@@ -399,12 +610,14 @@ class QueueLink(LoggingMixin):
         Returns:
             Reference to a queue instance
         """
+        queue_id = text(queue_id)
+
         if queue_id in self.client_queues_source:
             queue_list = self.client_queues_source
         else:
             queue_list = self.client_queues_destination
 
-        return queue_list[text(queue_id)]
+        return queue_list[queue_id]
 
     @validate_direction
     def register_queue(self,
@@ -666,12 +879,14 @@ class QueueLink(LoggingMixin):
             if direction == DIRECTION.FROM:
                 source_id = queue_id
 
-                # Stop the source publisher
-                # Wait for the process to stop
-                self._stop_publisher(source_id)
+                # Guard against an unknown id: nothing to stop or remove.
+                if queue_id_txt in self.publisher_stops:
+                    # Stop the source publisher
+                    # Wait for the process to stop
+                    self._stop_publisher(source_id)
 
-                # Remove the stop
-                self.publisher_stops.pop(queue_id_txt)
+                    # Remove the stop
+                    self.publisher_stops.pop(queue_id_txt)
 
             else:
                 # Stop current processes
@@ -696,6 +911,7 @@ class QueueLink(LoggingMixin):
         """
         with self.queues_lock:
             if queue_id is not None:
+                queue_id = text(queue_id)
                 self._log.debug("Checking if %s is empty", queue_id)
                 empty = True
 

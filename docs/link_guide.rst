@@ -224,7 +224,10 @@ Advanced Parameters
     Seconds an internal publisher blocks on each source ``get()`` (or each
     ``put()`` to a full destination) before checking for a stop request.
     Default ``0.1``. It does not delay messages; lower values make ``stop()``
-    return faster, higher values mean fewer idle wakeups.
+    return faster, higher values mean fewer idle wakeups. A full, unread
+    ``multiprocessing.SimpleQueue`` destination can cause ``stop()``,
+    ``register_queue(..., DIRECTION.TO)``, and ``unregister_queue()`` to hang
+    forever — see "Tuning link_timeout" in README.rst for details.
 
 ``trusted``
     For ``Connection`` sources — if ``True``, use ``.recv()``/``.send()``;

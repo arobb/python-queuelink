@@ -285,3 +285,16 @@ Lower it if you need ``stop()`` to return faster; raise it to reduce idle CPU us
 If ``stop()`` is requested while a publisher is waiting on a full destination queue that nobody is reading, the publisher gives up on that item for that destination (other destinations with room still receive it), logs a warning, and exits.
 
 ``multiprocessing.SimpleQueue`` sources are the exception: their ``get()`` has no timeout, so they are polled every 5 ms while idle, whatever ``link_timeout`` is. An item arriving while idle can wait up to 5 ms to be picked up.
+
+.. warning::
+   ``multiprocessing.SimpleQueue`` *destinations* have a separate, more serious
+   gotcha, unrelated to the polling note above. Every other supported
+   destination queue type puts in bounded waits and rechecks the stop event
+   between attempts, so a full, unread destination can no longer block
+   ``stop()`` forever. ``SimpleQueue`` has no feeder thread, so its ``put()``
+   writes to the underlying OS pipe directly, with no timeout and no retry
+   loop. If a ``SimpleQueue`` destination is never read and its backlog passes
+   the OS pipe buffer (about 64 KiB on Linux), that ``put()`` call blocks
+   inside the OS write itself, which cannot be interrupted. In that case,
+   ``stop()``, ``register_queue(..., DIRECTION.TO)``, and
+   ``unregister_queue()`` can hang forever waiting on it.

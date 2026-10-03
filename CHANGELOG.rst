@@ -12,6 +12,11 @@ Versions correspond to git tags; unreleased changes appear under *Unreleased*.
 Unreleased
 ----------
 
+----
+
+v2.3.1 — 2026-10-03
+--------------------
+
 Changed
 ~~~~~~~
 
@@ -22,8 +27,19 @@ Changed
   trade-off is that ``stop()`` (and ``register_queue()``/``unregister_queue()``,
   which restart publishers) can now take up to about 100 ms per publisher to
   return, instead of about 10 ms. Pass ``link_timeout=0.01`` to keep the old
-  behavior. The same timeout now also limits how long each ``put()`` to a full
-  destination blocks (FEAT-010).
+  behavior. The same timeout also governs how often a publisher retries a
+  ``put()`` against a full, unconsumed destination: each failed attempt now
+  blocks for up to 0.1 s before the stop event is re-checked and the attempt
+  is retried, so a publisher stuck on a full destination now retries about 10
+  times per second instead of about 100. This adds no delay under normal
+  operation — a destination with room still accepts the item on the very next
+  attempt, regardless of the timeout value. The trade-off mirrors the get
+  side: if ``stop()`` is requested while a publisher is blocked retrying
+  against a full destination, it can take up to the new timeout value longer
+  to notice and abandon that destination (see the ``stop()`` entry under
+  Fixed below for what "abandoned" means here). The same
+  ``link_timeout=0.01`` opt-out restores the old retry cadence for puts as
+  well (FEAT-010).
 
 Fixed
 ~~~~~
@@ -43,9 +59,14 @@ Fixed
   pipe. A stopping publisher now gives its destinations up to ``link_timeout`` to
   flush. It then uses ``cancel_join_thread()`` on any that are still blocked,
   dropping the items left in its buffer for those destinations only, and logs a
-  warning that names them. A destination whose reader keeps up still receives
-  everything. ``multiprocessing.SimpleQueue`` destinations have no feeder thread,
-  and this fix does not cover them (FEAT-010).
+  warning that lists the destinations. ``multiprocessing.SimpleQueue``
+  destinations have no feeder thread; ``put()`` writes to the pipe directly
+  on the calling thread/process, so it does not provide a timeout or retry. If
+  such a destination is never read and its backlog passes the OS pipe buffer
+  (about 64 KiB on Linux), that ``put()`` call blocks inside the OS write itself,
+  which cannot be interrupted by checking the stop event, so ``stop()``,
+  ``register_queue(..., DIRECTION.TO)``, and ``unregister_queue()`` can still
+  hang forever for this one destination queue type (FEAT-010).
 
 - ``QueueHandleAdapterWriter``: writing to a pipe, socket, or tty no longer
   crashes the writer thread/process with ``OSError: [Errno 22] Invalid
